@@ -1,0 +1,43 @@
+image:
+  repository: agentic-web-research
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  hosts:
+    - host: agentic-web-research.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+env:
+  publicBaseUrl: http://agentic-web-research.local
+  adminEmail: admin@example.com
+  adminPassword: change-me-now
+  appSecret: replace-this-with-a-long-random-secret
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  database: agentic_web_research
+  username: agentic_web_research
+  password: agentic_web_research
+  storageSize: 10Gi
+  externalDatabaseUrl: ""
+
+searxng:
+  enabled: true
+  image: searxng/searxng:latest
+  secretKey: agentic-web-research-change-this-secret
+  externalUrl: ""
+
+resources: {}

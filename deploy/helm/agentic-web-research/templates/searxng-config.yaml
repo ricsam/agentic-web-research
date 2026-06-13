@@ -1,0 +1,19 @@
+{{- if .Values.searxng.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentic-web-research.fullname" . }}-searxng
+data:
+  settings.yml: |
+    use_default_settings: true
+
+    server:
+      secret_key: {{ .Values.searxng.secretKey | quote }}
+      limiter: false
+      image_proxy: false
+
+    search:
+      formats:
+        - html
+        - json
+{{- end }}

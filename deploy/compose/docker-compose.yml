@@ -1,0 +1,56 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: agentic-web-research:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      PUBLIC_BASE_URL: http://localhost:8080
+      DATABASE_URL: postgres://agentic_web_research:agentic_web_research@postgres:5432/agentic_web_research
+      APP_SECRET: ${APP_SECRET:-replace-this-with-a-long-random-secret}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now}
+      SEARXNG_URL: http://searxng:8080
+      ADMIN_DIST_DIR: ../admin/dist
+      PLAYWRIGHT_HEADLESS: "true"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentic_web_research
+      POSTGRES_USER: agentic_web_research
+      POSTGRES_PASSWORD: agentic_web_research
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentic_web_research -d agentic_web_research"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1::5432"
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      BASE_URL: http://localhost:8081/
+      INSTANCE_NAME: agentic-web-research
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

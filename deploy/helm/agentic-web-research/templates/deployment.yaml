@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-web-research.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "8080"
+            - name: PUBLIC_BASE_URL
+              value: {{ .Values.env.publicBaseUrl | quote }}
+            - name: ADMIN_EMAIL
+              value: {{ .Values.env.adminEmail | quote }}
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.fullname" . }}
+                  key: ADMIN_PASSWORD
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.fullname" . }}
+                  key: APP_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.fullname" . }}
+                  key: DATABASE_URL
+            - name: SEARXNG_URL
+              value: {{- if .Values.searxng.externalUrl }} {{ .Values.searxng.externalUrl | quote }}{{- else }} "http://{{ include "agentic-web-research.fullname" . }}-searxng:8080"{{- end }}
+            - name: ADMIN_DIST_DIR
+              value: ../admin/dist
+            - name: PLAYWRIGHT_HEADLESS
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+

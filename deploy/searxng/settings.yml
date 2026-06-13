@@ -1,0 +1,11 @@
+use_default_settings: true
+
+server:
+  secret_key: agentic-web-research-change-this-secret
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json

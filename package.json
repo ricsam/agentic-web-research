@@ -1,0 +1,27 @@
+{
+  "name": "agentic-web-research",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.13",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,admin \"bun run dev:server\" \"bun run dev:admin\"",
+    "dev:server": "bun run --cwd apps/server dev",
+    "dev:admin": "bun run --cwd apps/admin dev",
+    "start": "bun run --cwd apps/server start",
+    "build": "bun run build:core && bun run build:admin && bun run build:server",
+    "build:core": "bun run --cwd packages/core build",
+    "build:admin": "bun run --cwd apps/admin build",
+    "build:server": "bun run --cwd apps/server build",
+    "test": "bun test packages/core/src apps/server/src",
+    "typecheck": "tsc -b",
+    "shadcn:init": "bunx --bun shadcn@latest init -t vite"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  }
+}
