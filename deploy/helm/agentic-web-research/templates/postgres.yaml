@@ -6,6 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: {{ .Values.postgres.storageClassName | quote }}
   resources:
     requests:
       storage: {{ .Values.postgres.storageSize }}
@@ -36,6 +37,8 @@ spec:
               value: {{ .Values.postgres.username | quote }}
             - name: POSTGRES_PASSWORD
               value: {{ .Values.postgres.password | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data

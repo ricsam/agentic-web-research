@@ -21,16 +21,118 @@ export const ResearchDefaultsSchema = z.object({
 
 export type ResearchDefaults = z.infer<typeof ResearchDefaultsSchema>;
 
+const HeaderMapBaseSchema = z
+  .record(z.string(), z.string())
+  .superRefine((headers, context) => {
+    const normalizedNames = new Set<string>();
+
+    for (const name of Object.keys(headers)) {
+      const normalized = name.trim().toLowerCase();
+      if (!normalized) {
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: "Header name cannot be empty"
+        });
+        continue;
+      }
+
+      if (normalizedNames.has(normalized)) {
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: "Duplicate header name"
+        });
+        continue;
+      }
+
+      normalizedNames.add(normalized);
+    }
+  })
+  .transform((headers) => {
+    return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.trim(), value]));
+  });
+
+export const HeaderMapSchema = HeaderMapBaseSchema.default({});
+
+const EndpointSchema = z.string().trim().url();
+const ProviderNameSchema = z.string().trim().min(1).max(120);
+const ProviderModelSchema = z.string().trim().min(1);
+const TemperatureSchema = z.number().min(0).max(2);
+const MaxOutputTokensSchema = z.number().int().min(256);
+const OptionalIsoDateSchema = z.string().datetime().optional();
+
 export const LlmConfigSchema = z.object({
-  endpoint: z.string().url().default("https://api.openai.com/v1"),
-  model: z.string().trim().min(1).default("gpt-4.1-mini"),
+  endpoint: EndpointSchema.default("https://api.openai.com/v1"),
+  model: ProviderModelSchema.default("gpt-4.1-mini"),
   apiKey: z.string().optional(),
-  headers: z.record(z.string(), z.string()).default({}),
-  temperature: z.number().min(0).max(2).default(0.2),
-  maxOutputTokens: z.number().int().min(256).max(32000).default(4096)
+  headers: HeaderMapSchema,
+  temperature: TemperatureSchema.default(0.2),
+  maxOutputTokens: MaxOutputTokensSchema.default(4096)
 });
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;
+
+export const OpenAiCompatibleProviderSchema = z.object({
+  id: z.string().trim().min(1),
+  name: ProviderNameSchema,
+  endpoint: EndpointSchema,
+  model: ProviderModelSchema,
+  apiKey: z.string().optional(),
+  headers: HeaderMapSchema,
+  temperature: TemperatureSchema.default(0.2),
+  maxOutputTokens: MaxOutputTokensSchema.default(4096),
+  createdAt: OptionalIsoDateSchema,
+  updatedAt: OptionalIsoDateSchema
+});
+
+export type OpenAiCompatibleProvider = z.infer<typeof OpenAiCompatibleProviderSchema>;
+
+export const LlmSettingsSchema = z.object({
+  activeProviderId: z.string().trim().min(1).optional(),
+  providers: z.array(OpenAiCompatibleProviderSchema).default([])
+});
+
+export type LlmSettings = z.infer<typeof LlmSettingsSchema>;
+
+export type PublicOpenAiCompatibleProvider = Omit<OpenAiCompatibleProvider, "apiKey" | "temperature"> & {
+  hasApiKey: boolean;
+};
+
+export type PublicLlmSettings = {
+  activeProviderId?: string;
+  providers: PublicOpenAiCompatibleProvider[];
+};
+
+export const OpenAiCompatibleProviderCreateSchema = z.object({
+  name: ProviderNameSchema,
+  endpoint: EndpointSchema,
+  model: ProviderModelSchema,
+  apiKey: z.string().optional(),
+  headers: HeaderMapSchema,
+  temperature: TemperatureSchema.default(0.2),
+  maxOutputTokens: MaxOutputTokensSchema.default(4096)
+});
+
+export type OpenAiCompatibleProviderCreate = z.infer<typeof OpenAiCompatibleProviderCreateSchema>;
+
+export const OpenAiCompatibleProviderUpdateSchema = z.object({
+  name: ProviderNameSchema.optional(),
+  endpoint: EndpointSchema.optional(),
+  model: ProviderModelSchema.optional(),
+  apiKey: z.string().optional(),
+  headers: HeaderMapBaseSchema.optional(),
+  temperature: TemperatureSchema.optional(),
+  maxOutputTokens: MaxOutputTokensSchema.optional()
+});
+
+export type OpenAiCompatibleProviderUpdate = z.infer<typeof OpenAiCompatibleProviderUpdateSchema>;
+
+export const LlmActiveProviderSchema = z.object({
+  providerId: z.string().trim().min(1)
+});
+
+export type LlmActiveProvider = z.infer<typeof LlmActiveProviderSchema>;
 
 export const ApiKeyCreateSchema = z.object({
   name: z.string().trim().min(1).max(120)

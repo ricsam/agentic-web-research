@@ -10,6 +10,16 @@ export type RenderedPage = {
   links: Array<{ title: string; url: string }>;
 };
 
+const blockedResourceTypes = new Set(["font", "image", "media"]);
+
+function networkIdleGraceMs(timeoutMs: number) {
+  return Math.min(5000, Math.max(1000, Math.floor(timeoutMs / 4)));
+}
+
+function bodyWaitMs(timeoutMs: number) {
+  return Math.min(2000, Math.max(500, Math.floor(timeoutMs / 10)));
+}
+
 export class WebRenderer {
   private browserPromise: Promise<Browser> | null = null;
 
@@ -22,13 +32,22 @@ export class WebRenderer {
       userAgent:
         "Mozilla/5.0 (compatible; agentic-web-research/0.1; +https://github.com/self-hosted/agentic-web-research)"
     });
+    await context.route("**/*", async (route) => {
+      if (blockedResourceTypes.has(route.request().resourceType())) {
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
     const page = await context.newPage();
 
     try {
       await page.goto(safeUrl.toString(), {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
         timeout: options.timeoutMs
       });
+      await page.waitForLoadState("networkidle", { timeout: networkIdleGraceMs(options.timeoutMs) }).catch(() => undefined);
+      await page.locator("body").waitFor({ state: "attached", timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
       const html = await page.content();
       const finalUrl = page.url();
       const fallbackTitle = await page.title();
@@ -71,7 +90,7 @@ export class WebRenderer {
   }
 
   private browser() {
-    this.browserPromise ??= chromium.launch({ headless: this.headless });
+    this.browserPromise ??= chromium.launch({ headless: this.headless, args: ["--disable-dev-shm-usage"] });
     return this.browserPromise;
   }
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ResearchDefaults, ResearchFinalResult, ResearchRequest, SearchResult } from "@agentic-web-research/core";
 import type { AppConfig } from "../config";
 import type { Database } from "../db/database";
+import { hasProviderCredentials } from "../db/database";
 import type { SseEmitter } from "../utils/sse";
 import { Semaphore } from "../utils/semaphore";
 import { WebRenderer } from "./renderer";
@@ -74,10 +75,21 @@ export async function runResearch(input: ResearchRunInput) {
     await emit("search_result", result);
   }
 
-  const llm = await db.getLlmConfig();
-  if (!llm.apiKey) {
-    throw new Error("LLM API key is not configured");
+  const activeProvider = await db.getActiveLlmProvider();
+  if (!activeProvider) {
+    throw new Error("No active LLM provider is configured");
   }
+  if (!hasProviderCredentials(activeProvider)) {
+    throw new Error("Active LLM provider is missing an API key or auth headers");
+  }
+
+  await db.log("info", "Using active LLM provider", {
+    providerId: activeProvider.id,
+    providerName: activeProvider.name,
+    endpoint: activeProvider.endpoint,
+    model: activeProvider.model,
+    headerNames: Object.keys(activeProvider.headers)
+  });
 
   const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
   const semaphore = new Semaphore(options.maxConcurrency);
@@ -92,16 +104,16 @@ export async function runResearch(input: ResearchRunInput) {
 
   try {
     const provider = createOpenAICompatible({
-      name: "admin-configured",
-      apiKey: llm.apiKey,
-      baseURL: llm.endpoint,
-      headers: llm.headers
+      name: activeProvider.name || "admin-configured",
+      apiKey: activeProvider.apiKey,
+      baseURL: activeProvider.endpoint,
+      headers: activeProvider.headers
     });
 
     const result = streamText({
-      model: provider(llm.model),
-      temperature: llm.temperature,
-      maxOutputTokens: llm.maxOutputTokens,
+      model: provider(activeProvider.model),
+      temperature: activeProvider.temperature,
+      maxOutputTokens: activeProvider.maxOutputTokens,
       stopWhen: stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16)),
       system:
         "You are a focused web research agent. Use the provided search results and page-viewing tool to gather enough evidence. " +

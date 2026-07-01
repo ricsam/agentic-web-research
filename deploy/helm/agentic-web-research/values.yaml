@@ -3,6 +3,8 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+imagePullSecrets: []
+
 replicaCount: 1
 
 service:
@@ -32,6 +34,7 @@ postgres:
   username: agentic_web_research
   password: agentic_web_research
   storageSize: 10Gi
+  storageClassName: rook-ceph-block
   externalDatabaseUrl: ""
 
 searxng:
@@ -40,4 +43,18 @@ searxng:
   secretKey: agentic-web-research-change-this-secret
   externalUrl: ""
 
-resources: {}
+playwright:
+  browsersPath: /ms-playwright
+  # Enable this for deployments that need to repair or populate browser binaries at pod startup.
+  # The Docker image normally includes browsers at build time.
+  installBrowsersOnStartup: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+    ephemeral-storage: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+    ephemeral-storage: 2Gi

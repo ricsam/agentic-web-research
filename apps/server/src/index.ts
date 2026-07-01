@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { setTimeout } from "node:timers/promises";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
@@ -19,9 +20,29 @@ const app = Fastify({
 });
 const db = new Database(config);
 
+async function initDatabaseWithRetry(maxAttempts = 30) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await db.init();
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      const delayMs = Math.min(1000 * attempt, 5000);
+      app.log.warn(
+        { err: error, attempt, maxAttempts, delayMs },
+        "Database initialization failed; retrying"
+      );
+      await setTimeout(delayMs);
+    }
+  }
+}
+
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
     return reply.code(400).send({ error: "Validation failed", issues: error.issues });
+  }
+  if (error && typeof error === "object" && "code" in error && error.code === "FST_ERR_CTP_EMPTY_JSON_BODY") {
+    return reply.code(400).send({ error: "Request body must be omitted or contain valid JSON" });
   }
   app.log.error(error);
   return reply.code(500).send({ error: "Internal server error" });
@@ -33,7 +54,7 @@ await app.register(cors, {
 });
 await app.register(cookie);
 
-await db.init();
+await initDatabaseWithRetry();
 await seedAdminUser(db, config);
 await registerPublicRoutes(app, db, config);
 await registerAdminRoutes(app, db, config);
@@ -53,14 +74,17 @@ if (existsSync(adminDist)) {
   });
 }
 
+let shuttingDown = false;
 const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   await app.close();
   await db.close();
   process.exit(0);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
 
 await app.listen({ host: "0.0.0.0", port: config.PORT });
 

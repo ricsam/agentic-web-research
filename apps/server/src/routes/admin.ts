@@ -3,11 +3,16 @@ import type { FastifyInstance } from "fastify";
 import {
   AdminLoginSchema,
   ApiKeyCreateSchema,
-  LlmConfigSchema,
-  ResearchDefaultsSchema
+  LlmActiveProviderSchema,
+  OpenAiCompatibleProviderCreateSchema,
+  OpenAiCompatibleProviderUpdateSchema,
+  ResearchDefaultsSchema,
+  ResearchRequestSchema
 } from "@agentic-web-research/core";
+import type { HealthStatus } from "@agentic-web-research/core";
 import type { AppConfig } from "../config";
 import type { Database } from "../db/database";
+import { hasProviderCredentials } from "../db/database";
 import {
   clearAdminCookie,
   requireAdmin,
@@ -16,7 +21,9 @@ import {
   verifyAdminCredentials
 } from "../auth/admin";
 import { createApiKey } from "../auth/keys";
+import { runResearch } from "../research/engine";
 import { searchWeb } from "../research/search";
+import { createSseEmitter, prepareSse } from "../utils/sse";
 
 export async function registerAdminRoutes(app: FastifyInstance, db: Database, config: AppConfig) {
   const secureCookies = config.NODE_ENV === "production";
@@ -45,25 +52,73 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
   app.get("/admin/api/settings/llm", async (request, reply) => {
     const session = await requireAdmin(config, request, reply);
     if (!session) return;
-    const llm = await db.getLlmConfig();
-    return {
-      ...llm,
-      apiKey: undefined,
-      hasApiKey: Boolean(llm.apiKey)
-    };
+    return db.getPublicLlmSettings();
   });
 
-  app.put("/admin/api/settings/llm", async (request, reply) => {
+  app.post("/admin/api/settings/llm/providers", async (request, reply) => {
     const session = await requireAdmin(config, request, reply);
     if (!session) return;
-    const body = LlmConfigSchema.partial({ apiKey: true }).parse(request.body);
-    const existing = await db.getLlmConfig();
-    await db.saveLlmConfig({
-      ...existing,
-      ...body,
-      apiKey: body.apiKey || existing.apiKey
+    const body = OpenAiCompatibleProviderCreateSchema.parse(request.body);
+    const provider = await db.createLlmProvider(body);
+    await db.log("info", "Created LLM provider", {
+      admin: session.email,
+      providerId: provider.id,
+      providerName: provider.name,
+      endpoint: provider.endpoint,
+      model: provider.model,
+      headerNames: Object.keys(provider.headers)
     });
-    await db.log("info", "Updated LLM configuration", { admin: session.email, endpoint: body.endpoint, model: body.model });
+    return reply.code(201).send({ ok: true, providerId: provider.id });
+  });
+
+  app.put("/admin/api/settings/llm/providers/:id", async (request, reply) => {
+    const session = await requireAdmin(config, request, reply);
+    if (!session) return;
+    const id = (request.params as { id: string }).id;
+    const body = OpenAiCompatibleProviderUpdateSchema.parse(request.body);
+    const provider = await db.updateLlmProvider(id, body);
+    if (!provider) return reply.code(404).send({ error: "Provider not found" });
+    await db.log("info", "Updated LLM provider", {
+      admin: session.email,
+      providerId: provider.id,
+      providerName: provider.name,
+      endpoint: provider.endpoint,
+      model: provider.model,
+      headerNames: Object.keys(provider.headers)
+    });
+    return { ok: true };
+  });
+
+  app.delete("/admin/api/settings/llm/providers/:id", async (request, reply) => {
+    const session = await requireAdmin(config, request, reply);
+    if (!session) return;
+    const id = (request.params as { id: string }).id;
+    try {
+      const deleted = await db.deleteLlmProvider(id);
+      if (!deleted) return reply.code(404).send({ error: "Provider not found" });
+    } catch (error) {
+      if (error instanceof Error && error.message === "Cannot delete the active provider") {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
+    await db.log("warn", "Deleted LLM provider", { admin: session.email, providerId: id });
+    return { ok: true };
+  });
+
+  app.put("/admin/api/settings/llm/active", async (request, reply) => {
+    const session = await requireAdmin(config, request, reply);
+    if (!session) return;
+    const { providerId } = LlmActiveProviderSchema.parse(request.body);
+    const provider = await db.setActiveLlmProvider(providerId);
+    if (!provider) return reply.code(404).send({ error: "Provider not found" });
+    await db.log("info", "Changed active LLM provider", {
+      admin: session.email,
+      providerId: provider.id,
+      providerName: provider.name,
+      endpoint: provider.endpoint,
+      model: provider.model
+    });
     return { ok: true };
   });
 
@@ -111,6 +166,42 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
     return { ok: true };
   });
 
+  app.post("/admin/api/research-test", async (request, reply) => {
+    const session = await requireAdmin(config, request, reply);
+    if (!session) return;
+
+    const body = ResearchRequestSchema.parse(request.body);
+    const defaults = await db.getResearchDefaults();
+    const taskId = await db.insertTask({
+      apiKeyId: null,
+      query: body.query,
+      request: { ...body, source: "admin_test", admin: session.email }
+    });
+    await db.log("info", "Started admin research test", { admin: session.email, taskId, query: body.query });
+
+    prepareSse(reply);
+    const emit = createSseEmitter(db, reply, taskId);
+
+    try {
+      await runResearch({
+        taskId,
+        request: body,
+        defaults,
+        config,
+        db,
+        emit
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown research error";
+      await db.failTask(taskId, message);
+      await emit("error", { message });
+    } finally {
+      reply.raw.end();
+    }
+
+    return reply;
+  });
+
   app.get("/admin/api/stats", async (request, reply) => {
     const session = await requireAdmin(config, request, reply);
     if (!session) return;
@@ -133,7 +224,7 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
     const session = await requireAdmin(config, request, reply);
     if (!session) return;
 
-    const checks = [];
+    const checks: Array<{ name: string; status: HealthStatus; message?: string; latencyMs?: number }> = [];
     const dbStart = Date.now();
     try {
       await db.query("SELECT 1");
@@ -150,11 +241,16 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
       checks.push({ name: "searxng", status: "degraded", message: error instanceof Error ? error.message : String(error) });
     }
 
-    const llm = await db.getLlmConfig();
+    const activeProvider = await db.getActiveLlmProvider();
+    const activeProviderHasAuth = activeProvider ? hasProviderCredentials(activeProvider) : false;
     checks.push({
       name: "llm_config",
-      status: llm.apiKey ? "ok" : "degraded",
-      message: llm.apiKey ? `${llm.model} at ${llm.endpoint}` : "LLM API key is not configured"
+      status: activeProvider && activeProviderHasAuth ? "ok" : "degraded",
+      message: activeProvider
+        ? activeProviderHasAuth
+          ? `${activeProvider.name} (${activeProvider.model}) at ${activeProvider.endpoint}`
+          : `${activeProvider.name} (${activeProvider.model}) at ${activeProvider.endpoint} is missing API key or auth headers`
+        : "No active LLM provider is configured"
     });
 
     const status = checks.some((check) => check.status === "down")

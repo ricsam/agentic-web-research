@@ -14,6 +14,10 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -51,18 +55,35 @@ spec:
               value: ../admin/dist
             - name: PLAYWRIGHT_HEADLESS
               value: "true"
+            - name: PLAYWRIGHT_BROWSERS_PATH
+              value: {{ .Values.playwright.browsersPath | default "/ms-playwright" | quote }}
+          {{- if (.Values.playwright.installBrowsersOnStartup | default false) }}
+          command:
+            - sh
+            - -lc
+            - cd /app/apps/server && bun node_modules/playwright/cli.js install chromium && exec bun src/index.ts
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
