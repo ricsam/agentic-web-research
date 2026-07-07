@@ -15,7 +15,16 @@ function createDatabaseWithSetting(value: Record<string, unknown>) {
     ADMIN_PASSWORD: "change-me-now",
     SEARXNG_URL: "http://localhost:8081",
     ADMIN_DIST_DIR: "../admin/dist",
-    PLAYWRIGHT_HEADLESS: true
+    CHART_REPO_DIR: "../../deploy/helm/repo",
+    PLAYWRIGHT_HEADLESS: true,
+    DEMO_RESEARCH_ENABLED: true,
+    DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS: 600000,
+    DEMO_RESEARCH_RATE_LIMIT_MAX: 5,
+    DEMO_RESEARCH_MAX_CONCURRENCY: 2,
+    DEMO_RESEARCH_MAX_DEPTH: 2,
+    DEMO_RESEARCH_MAX_PAGES: 4,
+    DEMO_RESEARCH_PAGE_TIMEOUT_MS: 15000,
+    DEMO_RESEARCH_TIMEOUT_MS: 120000
   });
 
   db.getSetting = async (_key, _fallback) => value as never;

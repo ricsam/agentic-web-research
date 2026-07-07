@@ -18,6 +18,7 @@
     "build:server": "bun run --cwd apps/server build",
     "test": "bun test packages/core/src apps/server/src",
     "typecheck": "tsc -b",
+    "helm:package": "mkdir -p deploy/helm/repo && helm package deploy/helm/agentic-web-research -d deploy/helm/repo && helm repo index deploy/helm/repo",
     "shadcn:init": "bunx --bun shadcn@latest init -t vite"
   },
   "devDependencies": {

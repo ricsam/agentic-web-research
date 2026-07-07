@@ -60,6 +60,23 @@ await registerPublicRoutes(app, db, config);
 await registerAdminRoutes(app, db, config);
 
 const adminDist = resolve(process.cwd(), config.ADMIN_DIST_DIR);
+const chartRepoDir = resolve(process.cwd(), config.CHART_REPO_DIR);
+
+if (existsSync(chartRepoDir)) {
+  await app.register(staticPlugin, {
+    root: chartRepoDir,
+    prefix: "/charts/",
+    decorateReply: false,
+    wildcard: false,
+    setHeaders(response, pathName) {
+      if (pathName.endsWith("index.yaml")) {
+        response.setHeader("Content-Type", "application/x-yaml; charset=utf-8");
+        response.setHeader("Cache-Control", "no-cache");
+      }
+    }
+  });
+}
+
 if (existsSync(adminDist)) {
   await app.register(staticPlugin, {
     root: adminDist,
@@ -67,8 +84,8 @@ if (existsSync(adminDist)) {
   });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.method === "GET" && !request.url.startsWith("/v1/") && !request.url.startsWith("/admin/api/")) {
-      return reply.sendFile("index.html");
+    if (request.method === "GET" && !request.url.startsWith("/v1/") && !request.url.startsWith("/admin/api/") && !request.url.startsWith("/charts/")) {
+      return reply.sendFile("index.html", { maxAge: 0, immutable: false });
     }
     return reply.code(404).send({ error: "Not found" });
   });

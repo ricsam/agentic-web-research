@@ -19,6 +19,14 @@ export default defineConfig({
       "/v1": {
         target: "http://localhost:8080",
         changeOrigin: true
+      },
+      "/charts": {
+        target: "http://localhost:8080",
+        changeOrigin: true
+      },
+      "/llms.txt": {
+        target: "http://localhost:8080",
+        changeOrigin: true
       }
     }
   }

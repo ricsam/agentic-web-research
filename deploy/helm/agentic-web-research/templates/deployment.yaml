@@ -53,10 +53,28 @@ spec:
               value: {{- if .Values.searxng.externalUrl }} {{ .Values.searxng.externalUrl | quote }}{{- else }} "http://{{ include "agentic-web-research.fullname" . }}-searxng:8080"{{- end }}
             - name: ADMIN_DIST_DIR
               value: ../admin/dist
+            - name: CHART_REPO_DIR
+              value: {{ .Values.chartRepoDir | quote }}
             - name: PLAYWRIGHT_HEADLESS
               value: "true"
             - name: PLAYWRIGHT_BROWSERS_PATH
               value: {{ .Values.playwright.browsersPath | default "/ms-playwright" | quote }}
+            - name: DEMO_RESEARCH_ENABLED
+              value: {{ .Values.demo.enabled | quote }}
+            - name: DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS
+              value: {{ .Values.demo.rateLimitWindowMs | quote }}
+            - name: DEMO_RESEARCH_RATE_LIMIT_MAX
+              value: {{ .Values.demo.rateLimitMax | quote }}
+            - name: DEMO_RESEARCH_MAX_CONCURRENCY
+              value: {{ .Values.demo.maxConcurrency | quote }}
+            - name: DEMO_RESEARCH_MAX_DEPTH
+              value: {{ .Values.demo.maxDepth | quote }}
+            - name: DEMO_RESEARCH_MAX_PAGES
+              value: {{ .Values.demo.maxPages | quote }}
+            - name: DEMO_RESEARCH_PAGE_TIMEOUT_MS
+              value: {{ .Values.demo.pageTimeoutMs | quote }}
+            - name: DEMO_RESEARCH_TIMEOUT_MS
+              value: {{ .Values.demo.timeoutMs | quote }}
           {{- if (.Values.playwright.installBrowsersOnStartup | default false) }}
           command:
             - sh

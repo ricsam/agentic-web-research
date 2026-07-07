@@ -1,0 +1,144 @@
+# agentic-web-research
+
+> Self-hosted web research service for AI agents. It searches with SearXNG, renders web pages with Playwright, extracts readable Markdown, and streams cited answers through an authenticated REST API.
+
+This file is served from <website>/llms.txt and is intended to help LLMs and agent developers understand how to use this deployment.
+
+## Primary links
+
+- Website and human documentation: <website>/
+- LLM documentation: <website>/llms.txt
+- Health check: <website>/healthz
+- Authenticated research API: <website>/v1/research
+- Public demo configuration: <website>/v1/demo/config
+- Public demo research API: <website>/v1/demo/research
+- Helm chart repository: <website>/charts
+- Helm chart index: <website>/charts/index.yaml
+- Admin console: <website>/admin
+- Source repository: https://github.com/ricsam/agentic-web-research
+
+## What this service does
+
+agentic-web-research runs a focused research loop for AI agents:
+
+1. Search the web for candidate sources.
+2. Render selected pages safely in a browser.
+3. Convert readable page content to Markdown.
+4. Use an admin-configured OpenAI-compatible LLM provider to decide what to inspect and produce an answer.
+5. Stream search events, page-render events, answer deltas, sources, and the final answer as Server-Sent Events.
+
+Use it when an agent needs fresh web evidence with citations instead of relying only on a static corpus.
+
+## Authentication
+
+Production research requests require an API key created in the admin console.
+
+Send the key as a Bearer token:
+
+```http
+Authorization: Bearer awr_...
+```
+
+Do not expose production API keys in browser-only clients.
+
+## Authenticated research API
+
+Endpoint: `POST <website>/v1/research`
+
+Headers:
+
+```http
+Authorization: Bearer awr_...
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+Request JSON:
+
+```json
+{
+  "query": "Compare agentic web research with classic RAG",
+  "maxConcurrency": 2,
+  "maxDepth": 2,
+  "maxPages": 4,
+  "timeoutMs": 120000
+}
+```
+
+Fields:
+
+- `query` (required string): Research question or task, 1 to 2000 characters.
+- `maxConcurrency` (optional integer): Concurrent page renders, 1 to 8.
+- `maxDepth` (optional integer): Navigation depth, 1 to 8.
+- `maxPages` (optional integer): Maximum rendered pages, 1 to 32.
+- `timeoutMs` (optional integer): Overall timeout in milliseconds, 5000 to 300000.
+
+Example:
+
+```bash
+curl -N "<website>/v1/research" \
+  -H "Authorization: Bearer awr_..." \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What changed in the latest stable Bun release?","maxPages":4,"maxDepth":2}'
+```
+
+## Demo research API
+
+Endpoint: `POST <website>/v1/demo/research`
+
+The demo endpoint uses the same request shape and SSE response contract as the authenticated endpoint, but it is unauthenticated, rate limited, and capped to small research jobs. It may be disabled on some deployments. Check `GET <website>/v1/demo/config` before using it.
+
+## Server-Sent Events response contract
+
+Research responses are streamed as Server-Sent Events. Each event uses the SSE event name and a JSON `data` payload with this shape:
+
+```json
+{
+  "type": "search_started",
+  "taskId": "task-id",
+  "at": "2026-01-01T00:00:00.000Z",
+  "payload": {}
+}
+```
+
+Event types:
+
+- `search_started`: Initial search began. Payload includes `query`.
+- `search_result`: One search result. Payload includes `title`, `url`, optional `snippet`, `engine`, and `score`.
+- `page_fetch_started`: A page render began. Payload includes `url`, `reason`, and `depth`.
+- `page_fetch_finished`: A page render finished. Payload includes `url`, `title`, `markdownLength`, and discovered `links` count.
+- `agent_thought`: The model requested a tool call. Payload includes `tool` and `args`.
+- `answer_delta`: Incremental answer text. Payload includes `text`.
+- `source`: Candidate or final source list. Payload includes `sources`.
+- `final`: Completed answer. Payload includes `answer`, `sources`, optional `confidence`, and optional `notes`.
+- `error`: Recoverable or terminal error information. Payload includes `message` when available.
+
+Minimal SSE example:
+
+```text
+event: search_started
+data: {"type":"search_started","taskId":"...","at":"...","payload":{"query":"..."}}
+
+event: answer_delta
+data: {"type":"answer_delta","taskId":"...","at":"...","payload":{"text":"The answer..."}}
+
+event: final
+data: {"type":"final","taskId":"...","at":"...","payload":{"answer":"...","sources":[...]}}
+```
+
+## Operations notes
+
+- Configure the active LLM provider, API keys, and research limits in the admin console at <website>/admin.
+- The LLM provider must be OpenAI API compatible.
+- The service supports Docker Compose and Helm deployments.
+- Helm repository URL: `<website>/charts`.
+- Private network rendering is disabled by default unless explicitly allowed by admin research settings.
+
+## Recommended agent behavior
+
+- Prefer `POST /v1/research` with an API key for production agent workflows.
+- Use `POST /v1/demo/research` only for demos or smoke tests.
+- Parse SSE events incrementally and append `answer_delta` text for live UI updates.
+- Treat `final` as the authoritative completed answer.
+- Preserve returned source URLs with the answer.
+- Respect rate limits and timeouts.

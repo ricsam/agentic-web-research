@@ -27,6 +27,18 @@ env:
   adminPassword: change-me-now
   appSecret: replace-this-with-a-long-random-secret
 
+chartRepoDir: ../../deploy/helm/repo
+
+demo:
+  enabled: true
+  rateLimitWindowMs: 600000
+  rateLimitMax: 5
+  maxConcurrency: 2
+  maxDepth: 2
+  maxPages: 4
+  pageTimeoutMs: 15000
+  timeoutMs: 120000
+
 postgres:
   enabled: true
   image: postgres:16-alpine

@@ -10,9 +10,34 @@ const EnvSchema = z.object({
   ADMIN_PASSWORD: z.string().min(8).default("change-me-now"),
   SEARXNG_URL: z.string().url().default("http://localhost:8081"),
   ADMIN_DIST_DIR: z.string().default("../admin/dist"),
+  CHART_REPO_DIR: z.string().default("../../deploy/helm/repo"),
   PLAYWRIGHT_HEADLESS: z
     .preprocess((value) => (value === undefined ? true : value !== "false"), z.boolean())
-    .default(true)
+    .default(true),
+  DEMO_RESEARCH_ENABLED: z
+    .preprocess((value) => (value === undefined ? true : value !== "false"), z.boolean())
+    .default(true),
+  DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(600000),
+  DEMO_RESEARCH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(5),
+  DEMO_RESEARCH_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  DEMO_RESEARCH_MAX_DEPTH: z.coerce.number().int().min(1).max(8).default(2),
+  DEMO_RESEARCH_MAX_PAGES: z.coerce.number().int().min(1).max(32).default(4),
+  DEMO_RESEARCH_PAGE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(3000)
+    .max(60000)
+    .default(15000),
+  DEMO_RESEARCH_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(5000)
+    .max(300000)
+    .default(120000)
 });
 
 export type AppConfig = z.infer<typeof EnvSchema>;
