@@ -5,6 +5,7 @@ import type { Database } from "../db/database";
 export type SseEmitter = (type: ResearchEventType, payload: Record<string, unknown>) => Promise<void>;
 
 export function prepareSse(reply: FastifyReply) {
+  reply.hijack();
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
