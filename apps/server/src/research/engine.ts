@@ -66,6 +66,28 @@ function throwIfAborted(signal?: AbortSignal) {
   }
 }
 
+export async function readStreamPart<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<IteratorResult<T>> {
+  throwIfAborted(signal);
+  return await new Promise<IteratorResult<T>>((resolve, reject) => {
+    const abort = () => {
+      cleanup();
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Research request aborted"));
+    };
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    signal.addEventListener("abort", abort, { once: true });
+    iterator.next().then(
+      (part) => {
+        cleanup();
+        resolve(part);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 function normalizeSourceUrl(input: string) {
   const url = new URL(input);
   url.hash = "";
@@ -274,8 +296,11 @@ export async function runResearch(input: ResearchRunInput) {
       }
     });
 
-    for await (const part of result.fullStream as AsyncIterable<Record<string, unknown>>) {
-      throwIfAborted(signal);
+    const streamIterator = (result.fullStream as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
+    while (true) {
+      const next = await readStreamPart(streamIterator, signal);
+      if (next.done) break;
+      const part = next.value;
       if (part.type === "text-delta") {
         const text = typeof part.text === "string" ? part.text : typeof part.delta === "string" ? part.delta : "";
         if (text) {
