@@ -70,7 +70,7 @@ function publicBaseUrl(config: AppConfig, request: FastifyRequest) {
 }
 
 export function createRequestAbortController(request: FastifyRequest, reply: FastifyReply) {
-  const controller = new AbortController();
+  const controller = new AbortController() as AbortController & { cleanup: () => void };
   const socket = request.raw.socket;
   const abort = () => {
     cleanup();
@@ -79,12 +79,11 @@ export function createRequestAbortController(request: FastifyRequest, reply: Fas
   const cleanup = () => {
     request.raw.off("aborted", abort);
     reply.raw.off("close", abort);
-    reply.raw.off("finish", cleanup);
     socket.off("close", abort);
   };
+  controller.cleanup = cleanup;
   request.raw.once("aborted", abort);
   reply.raw.once("close", abort);
-  reply.raw.once("finish", cleanup);
   socket.once("close", abort);
   return controller;
 }
@@ -150,6 +149,7 @@ async function runResearchSse(input: {
   } finally {
     runtime.researchTasks.release();
     if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
+    controller.cleanup();
   }
 
   return reply;
@@ -227,33 +227,41 @@ export async function registerPublicRoutes(
     if (!(await requireApiKey(request, reply, db))) return reply;
     const body = WebSearchRequestSchema.parse(request.body);
     const controller = createRequestAbortController(request, reply);
-    const results = await searchWeb(config.SEARXNG_URL, body.query, {
-      limit: body.limit,
-      signal: controller.signal
-    });
-    return { query: body.query, results };
+    try {
+      const results = await searchWeb(config.SEARXNG_URL, body.query, {
+        limit: body.limit,
+        signal: controller.signal
+      });
+      return { query: body.query, results };
+    } finally {
+      controller.cleanup();
+    }
   });
 
   app.post("/v1/read", async (request, reply) => {
     if (!(await requireApiKey(request, reply, db))) return reply;
     const body = WebReadRequestSchema.parse(request.body);
     const controller = createRequestAbortController(request, reply);
-    const defaults = await db.getResearchDefaults();
-    const attempt = await runtime.pageRenders.tryRun(async () => {
-      const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
-      try {
-        const rendered = await renderer.render(body.url, {
-          timeoutMs: defaults.pageTimeoutMs,
-          allowPrivateNetworks: false,
-          signal: controller.signal
-        });
-        return formatWebReadResult(rendered);
-      } finally {
-        await renderer.close();
-      }
-    });
-    if (!attempt.accepted) return sendCapacityError(reply, runtime);
-    return attempt.value;
+    try {
+      const defaults = await db.getResearchDefaults();
+      const attempt = await runtime.pageRenders.tryRun(async () => {
+        const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
+        try {
+          const rendered = await renderer.render(body.url, {
+            timeoutMs: defaults.pageTimeoutMs,
+            allowPrivateNetworks: false,
+            signal: controller.signal
+          });
+          return formatWebReadResult(rendered);
+        } finally {
+          await renderer.close();
+        }
+      });
+      if (!attempt.accepted) return sendCapacityError(reply, runtime);
+      return attempt.value;
+    } finally {
+      controller.cleanup();
+    }
   });
 
   app.get("/v1/demo/config", async () => ({

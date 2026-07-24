@@ -68,6 +68,22 @@ describe("public demo research helpers", () => {
     expect(controller.signal.aborted).toBe(true);
   });
 
+  test("removes disconnect listeners only when route work explicitly completes", () => {
+    const socket = new EventEmitter();
+    const requestRaw = new EventEmitter();
+    Object.assign(requestRaw, { socket });
+    const replyRaw = new EventEmitter();
+    const controller = createRequestAbortController(
+      { raw: requestRaw } as never,
+      { raw: replyRaw } as never
+    );
+
+    controller.cleanup();
+    socket.emit("close");
+
+    expect(controller.signal.aborted).toBe(false);
+  });
+
   test("builds demo defaults from config", () => {
     expect(demoDefaults(config)).toEqual({
       maxConcurrency: 2,
