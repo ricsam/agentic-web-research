@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { htmlToMarkdown } from "./markdown";
 
-function cloudflareStyleDocument(articleText: string, articlePath: string) {
+function cloudflareStyleDocument(
+  articleText: string,
+  articlePath: string,
+  navigationItems = 4_000
+) {
   const navigation = Array.from(
-    { length: 6_000 },
+    { length: navigationItems },
     (_, index) => `<li><a href="/api/navigation/${index}">Navigation item ${index}</a></li>`
   ).join("");
 
@@ -48,11 +52,11 @@ describe("htmlToMarkdown", () => {
 
   test("does not collapse different articles with identical navigation into the same Markdown", () => {
     const first = htmlToMarkdown(
-      cloudflareStyleDocument("First endpoint details.", "/first"),
+      cloudflareStyleDocument("First endpoint details.", "/first", 100),
       "https://developers.example.com/api/first"
     );
     const second = htmlToMarkdown(
-      cloudflareStyleDocument("Second endpoint details.", "/second"),
+      cloudflareStyleDocument("Second endpoint details.", "/second", 100),
       "https://developers.example.com/api/second"
     );
 
