@@ -98,7 +98,7 @@ export function createRequestAbortController(request: FastifyRequest, reply: Fas
         return;
       }
       try {
-        reply.raw.write(": keepalive\n\n");
+        if (!reply.raw.write(": keepalive\n\n")) abort();
       } catch {
         abort();
       }
