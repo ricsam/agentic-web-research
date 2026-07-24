@@ -21,6 +21,45 @@ import { createSseEmitter, prepareSse } from "../utils/sse";
 
 const MAX_READ_MARKDOWN_CHARS = 40_000;
 const MAX_READ_LINKS = 30;
+const RESEARCH_LEASE_TIMEOUT_MS = 10_000;
+
+type ActiveResearchLease = {
+  apiKeyId: string | null;
+  controller: AbortController;
+  lastHeartbeatAt: number;
+  timer: ReturnType<typeof setInterval>;
+};
+
+const activeResearchLeases = new Map<string, ActiveResearchLease>();
+
+function registerResearchLease(taskId: string, apiKeyId: string | null, controller: AbortController) {
+  const lease: ActiveResearchLease = {
+    apiKeyId,
+    controller,
+    lastHeartbeatAt: Date.now(),
+    timer: setInterval(() => {
+      if (Date.now() - lease.lastHeartbeatAt <= RESEARCH_LEASE_TIMEOUT_MS) return;
+      activeResearchLeases.delete(taskId);
+      clearInterval(lease.timer);
+      if (!controller.signal.aborted) controller.abort(new Error("Research client lease expired"));
+    }, 1_000)
+  };
+  lease.timer.unref();
+  activeResearchLeases.set(taskId, lease);
+  return () => {
+    const active = activeResearchLeases.get(taskId);
+    if (active === lease) activeResearchLeases.delete(taskId);
+    clearInterval(lease.timer);
+  };
+}
+
+export function renewResearchLease(taskId: string, apiKeyId: string) {
+  const lease = activeResearchLeases.get(taskId);
+  if (!lease) return "missing" as const;
+  if (lease.apiKeyId !== apiKeyId) return "forbidden" as const;
+  lease.lastHeartbeatAt = Date.now();
+  return "renewed" as const;
+}
 
 export function demoDefaults(config: AppConfig): ResearchDefaults {
   return {
@@ -146,6 +185,9 @@ async function runResearchSse(input: {
     query: body.query,
     request: requestMetadata ? { ...body, ...requestMetadata } : body
   });
+  const cleanupLease = request.headers["x-research-lease"] === "required"
+    ? registerResearchLease(taskId, apiKeyId, controller)
+    : undefined;
   prepareSse(reply);
   const emit = createSseEmitter(db, reply, taskId);
 
@@ -167,6 +209,7 @@ async function runResearchSse(input: {
       await emit("error", { message });
     }
   } finally {
+    cleanupLease?.();
     runtime.researchTasks.release();
     if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
     controller.cleanup();
@@ -307,6 +350,17 @@ export async function registerPublicRoutes(
       defaults: await db.getResearchDefaults(),
       apiKeyId: apiKey.id
     });
+  });
+
+  app.post("/v1/research/:taskId/heartbeat", async (request, reply) => {
+    const apiKey = await requireApiKey(request, reply, db);
+    if (!apiKey) return reply;
+    const taskId = (request.params as { taskId?: unknown }).taskId;
+    if (typeof taskId !== "string" || !taskId) return reply.code(400).send({ error: "Invalid task ID" });
+    const result = renewResearchLease(taskId, apiKey.id);
+    if (result === "missing") return reply.code(404).send({ error: "Research task lease not found" });
+    if (result === "forbidden") return reply.code(403).send({ error: "Research task lease belongs to another API key" });
+    return reply.code(204).send();
   });
 
   app.post("/v1/demo/research", async (request, reply) => {
