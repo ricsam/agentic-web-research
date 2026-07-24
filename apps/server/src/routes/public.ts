@@ -69,22 +69,42 @@ function publicBaseUrl(config: AppConfig, request: FastifyRequest) {
   return `${protocol}://${host}`;
 }
 
-export function createRequestAbortController(request: FastifyRequest, reply: FastifyReply) {
+export function createRequestAbortController(request: FastifyRequest, reply: FastifyReply, heartbeat = false) {
   const controller = new AbortController() as AbortController & { cleanup: () => void };
   const socket = request.raw.socket;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   const abort = () => {
     cleanup();
     if (!controller.signal.aborted) controller.abort(new Error("Client disconnected"));
   };
   const cleanup = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     request.raw.off("aborted", abort);
     reply.raw.off("close", abort);
+    reply.raw.off("error", abort);
     socket.off("close", abort);
+    socket.off("error", abort);
   };
   controller.cleanup = cleanup;
   request.raw.once("aborted", abort);
   reply.raw.once("close", abort);
+  reply.raw.once("error", abort);
   socket.once("close", abort);
+  socket.once("error", abort);
+  if (heartbeat) {
+    heartbeatTimer = setInterval(() => {
+      if (reply.raw.destroyed || reply.raw.writableEnded || socket.destroyed || !socket.writable) {
+        abort();
+        return;
+      }
+      try {
+        reply.raw.write(": keepalive\n\n");
+      } catch {
+        abort();
+      }
+    }, 1_000);
+    heartbeatTimer.unref();
+  }
   return controller;
 }
 
@@ -120,7 +140,7 @@ async function runResearchSse(input: {
     return sendCapacityError(reply, runtime);
   }
 
-  const controller = createRequestAbortController(request, reply);
+  const controller = createRequestAbortController(request, reply, true);
   const taskId = await db.insertTask({
     apiKeyId,
     query: body.query,
