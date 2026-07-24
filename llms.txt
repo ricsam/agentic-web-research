@@ -114,6 +114,11 @@ curl -N "<website>/v1/research" \
   -d '{"query":"What changed in the latest stable Bun release?","maxPages":4,"maxDepth":2}'
 ```
 
+Long-running clients may send `X-Research-Lease: required`, renew the lease
+with authenticated `POST <website>/v1/research/:taskId/heartbeat`, and cancel
+the active task with authenticated `DELETE <website>/v1/research/:taskId`.
+Cancellation returns HTTP 202 while the failed terminal state is persisted.
+
 ## Demo research API
 
 Endpoint: `POST <website>/v1/demo/research`

@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import { demoDefaults, clampDemoRequest, createRequestAbortController, llmsTxt, waitForResearchAbort } from "./public";
+import {
+  cancelResearchLease,
+  demoDefaults,
+  clampDemoRequest,
+  createRequestAbortController,
+  llmsTxt,
+  registerResearchLease,
+  waitForResearchAbort
+} from "./public";
 import type { AppConfig } from "../config";
 
 const config: AppConfig = {
@@ -43,6 +51,19 @@ describe("public demo research helpers", () => {
     controller.abort(new Error("Research client lease expired"));
 
     await expect(pending).rejects.toThrow("Research client lease expired");
+  });
+
+  test("allows only the owning API key to cancel an active research lease", () => {
+    const controller = new AbortController();
+    const cleanup = registerResearchLease("task-1", "key-1", controller);
+
+    expect(cancelResearchLease("task-1", "key-2")).toBe("forbidden");
+    expect(controller.signal.aborted).toBe(false);
+    expect(cancelResearchLease("task-1", "key-1")).toBe("cancelled");
+    expect(controller.signal.reason).toEqual(new Error("Research task cancelled by client"));
+
+    cleanup();
+    expect(cancelResearchLease("task-1", "key-1")).toBe("missing");
   });
 
   test("aborts work when the response closes even if Node marks it ended", () => {

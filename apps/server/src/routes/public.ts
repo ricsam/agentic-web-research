@@ -32,7 +32,7 @@ type ActiveResearchLease = {
 
 const activeResearchLeases = new Map<string, ActiveResearchLease>();
 
-function registerResearchLease(taskId: string, apiKeyId: string | null, controller: AbortController) {
+export function registerResearchLease(taskId: string, apiKeyId: string | null, controller: AbortController) {
   const lease: ActiveResearchLease = {
     apiKeyId,
     controller,
@@ -59,6 +59,16 @@ export function renewResearchLease(taskId: string, apiKeyId: string) {
   if (lease.apiKeyId !== apiKeyId) return "forbidden" as const;
   lease.lastHeartbeatAt = Date.now();
   return "renewed" as const;
+}
+
+export function cancelResearchLease(taskId: string, apiKeyId: string) {
+  const lease = activeResearchLeases.get(taskId);
+  if (!lease) return "missing" as const;
+  if (lease.apiKeyId !== apiKeyId) return "forbidden" as const;
+  if (!lease.controller.signal.aborted) {
+    lease.controller.abort(new Error("Research task cancelled by client"));
+  }
+  return "cancelled" as const;
 }
 
 export async function waitForResearchAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -388,6 +398,17 @@ export async function registerPublicRoutes(
     if (result === "missing") return reply.code(404).send({ error: "Research task lease not found" });
     if (result === "forbidden") return reply.code(403).send({ error: "Research task lease belongs to another API key" });
     return reply.code(204).send();
+  });
+
+  app.delete("/v1/research/:taskId", async (request, reply) => {
+    const apiKey = await requireApiKey(request, reply, db);
+    if (!apiKey) return reply;
+    const taskId = (request.params as { taskId?: unknown }).taskId;
+    if (typeof taskId !== "string" || !taskId) return reply.code(400).send({ error: "Invalid task ID" });
+    const result = cancelResearchLease(taskId, apiKey.id);
+    if (result === "missing") return reply.code(404).send({ error: "Active research task not found" });
+    if (result === "forbidden") return reply.code(403).send({ error: "Research task belongs to another API key" });
+    return reply.code(202).send({ status: "cancelling" });
   });
 
   app.post("/v1/demo/research", async (request, reply) => {

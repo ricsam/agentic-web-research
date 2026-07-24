@@ -48,6 +48,9 @@ curl -N http://localhost:8080/v1/research \
 ```
 
 Responses are Server-Sent Events with typed JSON payloads.
+Clients can send `X-Research-Lease: required`, renew the lease with
+`POST /v1/research/:taskId/heartbeat`, and explicitly stop active work with
+`DELETE /v1/research/:taskId`.
 
 All authenticated endpoints reject private, loopback, link-local, cluster-internal, and metadata URLs. `/healthz` is a process liveness check and `/readyz` verifies Postgres, SearXNG, Chromium, and LLM configuration.
 
