@@ -1,6 +1,9 @@
-import { chromium, type Browser } from "playwright";
-import { JSDOM } from "jsdom";
-import { htmlToMarkdown } from "./markdown";
+import { chromium, type Browser, type Page } from "playwright";
+import {
+  htmlToMarkdown,
+  isReadableContent,
+  type ContentMetrics
+} from "./markdown";
 import { assertSafeHttpUrl, UnsafeUrlError } from "./urlSafety";
 
 export type RenderedPage = {
@@ -33,27 +36,116 @@ function isHtmlContentType(contentType: string | null) {
   return contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
 }
 
-function extractLinks(html: string, finalUrl: string) {
-  const dom = new JSDOM(html, { url: finalUrl });
-  const seen = new Set<string>();
-  try {
-    return Array.from(dom.window.document.querySelectorAll("a[href]"))
-      .map((anchor) => {
-        const element = anchor as HTMLAnchorElement;
-        return {
-          title: (element.textContent || element.title || element.href).trim().slice(0, 160),
-          url: element.href
-        };
-      })
-      .filter((link) => {
-        if (!link.url || seen.has(link.url)) return false;
-        seen.add(link.url);
-        return link.url.startsWith("http://") || link.url.startsWith("https://");
-      })
-      .slice(0, 50);
-  } finally {
-    dom.window.close();
+type BrowserContentSnapshot = {
+  html: string;
+  title: string;
+  metrics: ContentMetrics;
+};
+
+async function extractBrowserContent(page: Page): Promise<BrowserContentSnapshot> {
+  const snapshot = await page.evaluate(() => {
+    const rootSelector = [
+      "article",
+      "main",
+      '[role="main"]',
+      "#main-content",
+      "#content",
+      ".main-content",
+      ".article-content",
+      ".docs-content",
+      "[data-pagefind-body]"
+    ].join(",");
+    const noiseSelector = [
+      "nav",
+      "aside",
+      "footer",
+      "script",
+      "style",
+      "template",
+      "noscript",
+      "svg",
+      "canvas",
+      "form",
+      "button",
+      "dialog",
+      '[role="navigation"]',
+      '[role="banner"]',
+      '[role="complementary"]',
+      '[role="menu"]',
+      '[role="menuitem"]',
+      "[hidden]",
+      '[aria-hidden="true"]',
+      '[aria-label*="breadcrumb" i]',
+      '[class*="sidebar" i]',
+      '[id*="sidebar" i]',
+      '[class*="breadcrumb" i]',
+      '[id*="breadcrumb" i]',
+      '[class*="table-of-contents" i]',
+      '[id*="table-of-contents" i]',
+      '[class*="dropdown" i]',
+      '[class~="toc"]',
+      "#toc"
+    ].join(",");
+    const normalize = (value: string | null | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
+    const metricsFor = (element: Element) => {
+      const textLength = normalize(element.textContent).length;
+      const linkTextLength = Array.from(element.querySelectorAll("a"))
+        .reduce((total, link) => total + normalize(link.textContent).length, 0);
+      return {
+        textLength,
+        linkTextLength,
+        paragraphCount: element.querySelectorAll("p").length,
+        headingCount: element.querySelectorAll("h1, h2, h3, h4, h5, h6").length,
+        preformattedCount: element.querySelectorAll("pre").length,
+        tableCount: element.querySelectorAll("table").length,
+        blockquoteCount: element.querySelectorAll("blockquote").length,
+        listItemCount: element.querySelectorAll("li").length
+      };
+    };
+    const score = (metrics: ContentMetrics) => {
+      const nonLinkTextLength = Math.max(0, metrics.textLength - metrics.linkTextLength);
+      return (
+        nonLinkTextLength +
+        metrics.paragraphCount * 120 +
+        metrics.headingCount * 80 +
+        metrics.preformattedCount * 160 +
+        metrics.tableCount * 200 +
+        metrics.blockquoteCount * 80 -
+        metrics.linkTextLength * 0.75 -
+        Math.max(0, metrics.listItemCount - 20) * 8
+      );
+    };
+    const prepare = (element: Element) => {
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") return null;
+      const clone = element.cloneNode(true) as Element;
+      clone.querySelectorAll(noiseSelector).forEach((node) => node.remove());
+      const metrics = metricsFor(clone);
+      return {
+        html: clone.outerHTML,
+        title: normalize(clone.querySelector("h1")?.textContent) || document.title || location.href,
+        metrics,
+        score: score(metrics)
+      };
+    };
+
+    const roots = Array.from(new Set(document.querySelectorAll(rootSelector)));
+    const semanticCandidates = roots
+      .map(prepare)
+      .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate?.metrics.textLength));
+    const bodyCandidate = document.body ? prepare(document.body) : null;
+    const candidates = semanticCandidates.length
+      ? semanticCandidates
+      : bodyCandidate
+        ? [bodyCandidate]
+        : [];
+    return candidates.sort((a, b) => b.score - a.score)[0] ?? null;
+  });
+
+  if (!snapshot || !isReadableContent(snapshot.metrics)) {
+    throw new Error("Page did not contain meaningful readable article content after rendering");
   }
+  return snapshot;
 }
 
 function combineRenderErrors(primary: unknown, fallback: unknown) {
@@ -143,7 +235,7 @@ export class WebRenderer {
         finalUrl: finalUrlString,
         title: converted.title || finalUrlString,
         markdown: converted.markdown,
-        links: extractLinks(html, finalUrlString)
+        links: converted.links
       };
     } finally {
       clearTimeout(timeout);
@@ -183,35 +275,18 @@ export class WebRenderer {
       await page.waitForLoadState("domcontentloaded", { timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
       await page.waitForLoadState("networkidle", { timeout: networkIdleGraceMs(options.timeoutMs) }).catch(() => undefined);
       await page.locator("body").waitFor({ state: "attached", timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
-      const html = await page.content();
       const finalUrl = page.url();
       await assertSafeHttpUrl(finalUrl, options.allowPrivateNetworks);
       const fallbackTitle = await page.title();
-      const links = await page.$$eval("a[href]", (anchors) => {
-        const seen = new Set<string>();
-        return anchors
-          .map((anchor) => {
-            const element = anchor as HTMLAnchorElement;
-            return {
-              title: (element.innerText || element.title || element.href).trim().slice(0, 160),
-              url: element.href
-            };
-          })
-          .filter((link) => {
-            if (!link.url || seen.has(link.url)) return false;
-            seen.add(link.url);
-            return link.url.startsWith("http://") || link.url.startsWith("https://");
-          })
-          .slice(0, 50);
-      });
-      const converted = htmlToMarkdown(html, finalUrl);
+      const snapshot = await extractBrowserContent(page);
+      const converted = htmlToMarkdown(snapshot.html, finalUrl, snapshot.title || fallbackTitle);
 
       return {
         url: inputUrl,
         finalUrl,
         title: converted.title || fallbackTitle || finalUrl,
         markdown: converted.markdown,
-        links
+        links: converted.links
       };
     } finally {
       options.signal?.removeEventListener("abort", abort);
