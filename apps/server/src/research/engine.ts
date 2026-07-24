@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { stepCountIs, streamText, tool } from "ai";
+import { hasToolCall, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import type { ResearchDefaults, ResearchFinalResult, ResearchRequest, SearchResult } from "@agentic-web-research/core";
 import type { AppConfig } from "../config";
@@ -168,7 +168,10 @@ export async function runResearch(input: ResearchRunInput) {
       temperature: activeProvider.temperature,
       maxOutputTokens: activeProvider.maxOutputTokens,
       abortSignal: signal,
-      stopWhen: stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16)),
+      stopWhen: [
+        hasToolCall("submit_research_result"),
+        stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16))
+      ],
       system:
         "You are a focused web research agent. Use the provided search results and page-viewing tool to gather enough evidence. " +
         "Prefer authoritative primary sources. Do not invent sources. When you have enough information, call submit_research_result with a concise answer and source list.",
