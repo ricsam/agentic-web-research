@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import { demoDefaults, clampDemoRequest, createRequestAbortController, llmsTxt } from "./public";
+import { demoDefaults, clampDemoRequest, createRequestAbortController, llmsTxt, waitForResearchAbort } from "./public";
 import type { AppConfig } from "../config";
 
 const config: AppConfig = {
@@ -36,6 +36,15 @@ const config: AppConfig = {
 };
 
 describe("public demo research helpers", () => {
+  test("stops waiting for unresolved research when the route is aborted", async () => {
+    const controller = new AbortController();
+    const pending = waitForResearchAbort(new Promise(() => undefined), controller.signal);
+
+    controller.abort(new Error("Research client lease expired"));
+
+    await expect(pending).rejects.toThrow("Research client lease expired");
+  });
+
   test("aborts work when the response closes even if Node marks it ended", () => {
     const socket = new EventEmitter();
     const requestRaw = new EventEmitter();

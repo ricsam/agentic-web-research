@@ -61,6 +61,30 @@ export function renewResearchLease(taskId: string, apiKeyId: string) {
   return "renewed" as const;
 }
 
+export async function waitForResearchAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("Research request aborted");
+  }
+  return await new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      cleanup();
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Research request aborted"));
+    };
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(
+      (result) => {
+        cleanup();
+        resolve(result);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 export function demoDefaults(config: AppConfig): ResearchDefaults {
   return {
     maxConcurrency: config.DEMO_RESEARCH_MAX_CONCURRENCY,
@@ -192,16 +216,19 @@ async function runResearchSse(input: {
   const emit = createSseEmitter(db, reply, taskId);
 
   try {
-    await runResearch({
-      taskId,
-      request: body,
-      defaults,
-      config,
-      db,
-      emit,
-      runtime,
-      signal: controller.signal
-    });
+    await waitForResearchAbort(
+      runResearch({
+        taskId,
+        request: body,
+        defaults,
+        config,
+        db,
+        emit,
+        runtime,
+        signal: controller.signal
+      }),
+      controller.signal
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown research error";
     await db.failTask(taskId, message);
