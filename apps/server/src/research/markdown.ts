@@ -184,6 +184,57 @@ function selectCandidate(document: Document) {
   return acceptable.find((candidate) => candidate.method === "body");
 }
 
+function resolveUrl(rawValue: string | null, baseUrl: string, allowedProtocols: ReadonlySet<string>) {
+  const value = rawValue?.trim();
+  if (!value) return null;
+
+  try {
+    const resolved = new URL(value, baseUrl);
+    return allowedProtocols.has(resolved.protocol) ? resolved.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+const linkProtocols = new Set(["http:", "https:", "mailto:", "tel:"]);
+const imageProtocols = new Set(["http:", "https:"]);
+
+function normalizeContentUrls(element: Element, fallbackBaseUrl: string) {
+  const baseUrl = element.ownerDocument.baseURI || fallbackBaseUrl;
+
+  for (const anchor of Array.from(element.querySelectorAll("a[href]"))) {
+    const resolved = resolveUrl(anchor.getAttribute("href"), baseUrl, linkProtocols);
+    if (resolved) {
+      anchor.setAttribute("href", resolved);
+    } else {
+      anchor.removeAttribute("href");
+    }
+  }
+
+  for (const image of Array.from(element.querySelectorAll("img"))) {
+    const resolved = resolveUrl(image.getAttribute("src"), baseUrl, imageProtocols);
+    if (!resolved) {
+      image.remove();
+      continue;
+    }
+
+    const labelText = normalizeText(image.getAttribute("alt") || image.getAttribute("title"));
+    const label = `Image: ${labelText || "Image"}`;
+    const enclosingAnchor = image.closest("a");
+    if (enclosingAnchor && element.contains(enclosingAnchor)) {
+      const labelElement = element.ownerDocument.createElement("span");
+      labelElement.textContent = label;
+      image.replaceWith(labelElement);
+      continue;
+    }
+
+    const link = element.ownerDocument.createElement("a");
+    link.setAttribute("href", resolved);
+    link.textContent = label;
+    image.replaceWith(link);
+  }
+}
+
 function extractLinks(element: Element) {
   const seen = new Set<string>();
   return Array.from(element.querySelectorAll("a[href]"))
@@ -215,6 +266,7 @@ export function htmlToMarkdown(html: string, url: string, fallbackTitle?: string
       throw new Error("Page did not contain meaningful readable article content");
     }
 
+    normalizeContentUrls(selected.element, url);
     const markdown = turndown
       .turndown(selected.element.innerHTML)
       .replace(/\n{3,}/g, "\n\n")
