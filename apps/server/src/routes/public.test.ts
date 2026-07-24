@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { demoDefaults, clampDemoRequest, llmsTxt } from "./public";
+import { EventEmitter } from "node:events";
+import { demoDefaults, clampDemoRequest, createRequestAbortController, llmsTxt } from "./public";
 import type { AppConfig } from "../config";
 
 const config: AppConfig = {
@@ -35,6 +36,21 @@ const config: AppConfig = {
 };
 
 describe("public demo research helpers", () => {
+  test("aborts work when the response closes even if Node marks it ended", () => {
+    const requestRaw = new EventEmitter();
+    const replyRaw = new EventEmitter();
+    Object.assign(replyRaw, { writableEnded: true });
+    const controller = createRequestAbortController(
+      { raw: requestRaw } as never,
+      { raw: replyRaw } as never
+    );
+
+    replyRaw.emit("close");
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(controller.signal.reason).toEqual(new Error("Client disconnected"));
+  });
+
   test("builds demo defaults from config", () => {
     expect(demoDefaults(config)).toEqual({
       maxConcurrency: 2,
