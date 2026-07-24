@@ -13,14 +13,30 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}-searxng
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: searxng
           image: {{ .Values.searxng.image | quote }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8080
           env:
             - name: INSTANCE_NAME
               value: agentic-web-research
+            - name: SEARXNG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.searxngSecret }}
+          resources:
+            {{- toYaml .Values.searxng.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/searxng/settings.yml

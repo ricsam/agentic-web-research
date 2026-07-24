@@ -22,7 +22,23 @@ The first server boot creates a single admin account from:
 
 Change these before deploying.
 
-## Public API
+## Agent APIs
+
+Search and read a rendered page:
+
+```bash
+curl http://localhost:8080/v1/search \
+  -H "Authorization: Bearer awr_..." \
+  -H "Content-Type: application/json" \
+  -d '{"query":"latest stable Bun release","limit":5}'
+
+curl http://localhost:8080/v1/read \
+  -H "Authorization: Bearer awr_..." \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://bun.sh/blog"}'
+```
+
+Run delegated research:
 
 ```bash
 curl -N http://localhost:8080/v1/research \
@@ -32,6 +48,10 @@ curl -N http://localhost:8080/v1/research \
 ```
 
 Responses are Server-Sent Events with typed JSON payloads.
+
+All authenticated endpoints reject private, loopback, link-local, cluster-internal, and metadata URLs. `/healthz` is a process liveness check and `/readyz` verifies Postgres, SearXNG, Chromium, and LLM configuration.
+
+For unattended deployments, `BOOTSTRAP_API_KEY` and the `BOOTSTRAP_LLM_*` environment variables idempotently configure the service on startup.
 
 ## Website, Demo, and LLM Docs
 
@@ -55,8 +75,19 @@ The chart source lives in `deploy/helm/agentic-web-research`. Packaged chart rep
 ```bash
 helm repo add agentic-web-research http://localhost:8080/charts
 helm repo update
+kubectl create secret generic agentic-web-research-secrets \
+  --from-literal=APP_SECRET='<long-random-value>' \
+  --from-literal=ADMIN_PASSWORD='<admin-password>' \
+  --from-literal=POSTGRES_PASSWORD='<database-password>' \
+  --from-literal=BOOTSTRAP_API_KEY='<stable-agent-token>' \
+  --from-literal=BOOTSTRAP_LLM_API_KEY='<model-api-key>' \
+  --from-literal=BOOTSTRAP_LLM_HEADERS_JSON='{}' \
+  --from-literal=SEARXNG_SECRET='<long-random-value>'
 helm install awr agentic-web-research/agentic-web-research
 ```
+
+The chart never generates or stores credential values. Set `existingSecret` if
+you use a different Secret name.
 
 Regenerate the package after chart changes:
 
@@ -70,4 +101,3 @@ bun run helm:package
 - Helm chart: `deploy/helm/agentic-web-research`
 
 The default deployment includes Postgres and SearXNG. The chart supports external Postgres and external SearXNG by values override.
-

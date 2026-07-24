@@ -1,7 +1,13 @@
 import { z } from "zod";
 
+const HttpUrlSchema = z.string().url().refine((input) => {
+  const protocol = new URL(input).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, "URL must use http or https");
+
 export const ResearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(2000),
+  sourceUrls: z.array(HttpUrlSchema).max(8).optional(),
   maxConcurrency: z.number().int().min(1).max(8).optional(),
   maxDepth: z.number().int().min(1).max(8).optional(),
   maxPages: z.number().int().min(1).max(32).optional(),
@@ -9,6 +15,19 @@ export const ResearchRequestSchema = z.object({
 });
 
 export type ResearchRequest = z.infer<typeof ResearchRequestSchema>;
+
+export const WebSearchRequestSchema = z.object({
+  query: z.string().trim().min(1).max(1000),
+  limit: z.number().int().min(1).max(10).default(5)
+});
+
+export type WebSearchRequest = z.infer<typeof WebSearchRequestSchema>;
+
+export const WebReadRequestSchema = z.object({
+  url: HttpUrlSchema
+});
+
+export type WebReadRequest = z.infer<typeof WebReadRequestSchema>;
 
 export const ResearchDefaultsSchema = z.object({
   maxConcurrency: z.number().int().min(1).max(8).default(2),
@@ -176,6 +195,25 @@ export type SearchResult = {
   score?: number;
 };
 
+export type WebSearchResult = {
+  query: string;
+  results: SearchResult[];
+};
+
+export type WebPageLink = {
+  title: string;
+  url: string;
+};
+
+export type WebReadResult = {
+  url: string;
+  finalUrl: string;
+  title: string;
+  markdown: string;
+  links: WebPageLink[];
+  truncated: boolean;
+};
+
 export type ResearchSource = {
   url: string;
   title?: string;
@@ -200,4 +238,3 @@ export type ServiceHealth = {
     latencyMs?: number;
   }>;
 };
-

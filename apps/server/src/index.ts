@@ -11,6 +11,9 @@ import { seedAdminUser } from "./auth/admin";
 import { Database } from "./db/database";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerPublicRoutes } from "./routes/public";
+import { bootstrapServiceConfiguration } from "./bootstrap";
+import { createResearchRuntime } from "./research/runtime";
+import { UnsafeUrlError } from "./research/urlSafety";
 
 const config = loadConfig();
 const app = Fastify({
@@ -41,6 +44,9 @@ app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
     return reply.code(400).send({ error: "Validation failed", issues: error.issues });
   }
+  if (error instanceof UnsafeUrlError) {
+    return reply.code(400).send({ error: error.message });
+  }
   if (error && typeof error === "object" && "code" in error && error.code === "FST_ERR_CTP_EMPTY_JSON_BODY") {
     return reply.code(400).send({ error: "Request body must be omitted or contain valid JSON" });
   }
@@ -56,8 +62,10 @@ await app.register(cookie);
 
 await initDatabaseWithRetry();
 await seedAdminUser(db, config);
-await registerPublicRoutes(app, db, config);
-await registerAdminRoutes(app, db, config);
+await bootstrapServiceConfiguration(db, config);
+const researchRuntime = createResearchRuntime(config);
+await registerPublicRoutes(app, db, config, researchRuntime);
+await registerAdminRoutes(app, db, config, researchRuntime);
 
 const adminDist = resolve(process.cwd(), config.ADMIN_DIST_DIR);
 const chartRepoDir = resolve(process.cwd(), config.CHART_REPO_DIR);
@@ -104,4 +112,3 @@ process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
 
 await app.listen({ host: "0.0.0.0", port: config.PORT });
-

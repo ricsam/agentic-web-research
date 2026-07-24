@@ -1,11 +1,21 @@
 image:
-  repository: agentic-web-research
+  repository: ghcr.io/ricsam/agentic-web-research
   tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
-
 replicaCount: 1
+existingSecret: agentic-web-research-secrets
+
+secretKeys:
+  appSecret: APP_SECRET
+  adminPassword: ADMIN_PASSWORD
+  postgresPassword: POSTGRES_PASSWORD
+  databaseUrl: DATABASE_URL
+  bootstrapApiKey: BOOTSTRAP_API_KEY
+  bootstrapLlmApiKey: BOOTSTRAP_LLM_API_KEY
+  bootstrapLlmHeadersJson: BOOTSTRAP_LLM_HEADERS_JSON
+  searxngSecret: SEARXNG_SECRET
 
 service:
   type: ClusterIP
@@ -24,8 +34,17 @@ ingress:
 env:
   publicBaseUrl: http://agentic-web-research.local
   adminEmail: admin@example.com
-  adminPassword: change-me-now
-  appSecret: replace-this-with-a-long-random-secret
+
+bootstrapLlm:
+  endpoint: ""
+  model: ""
+  temperature: 0.2
+  maxOutputTokens: 4096
+
+capacity:
+  maxActiveResearchTasks: 4
+  maxActivePageRenders: 8
+  retryAfterSeconds: 10
 
 chartRepoDir: ../../deploy/helm/repo
 
@@ -44,29 +63,57 @@ postgres:
   image: postgres:16-alpine
   database: agentic_web_research
   username: agentic_web_research
-  password: agentic_web_research
   storageSize: 10Gi
   storageClassName: rook-ceph-block
   externalDatabaseUrl: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
 
 searxng:
   enabled: true
   image: searxng/searxng:latest
-  secretKey: agentic-web-research-change-this-secret
   externalUrl: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 playwright:
   browsersPath: /ms-playwright
-  # Enable this for deployments that need to repair or populate browser binaries at pod startup.
-  # The Docker image normally includes browsers at build time.
   installBrowsersOnStartup: false
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
 
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 500m
+    memory: 1Gi
     ephemeral-storage: 512Mi
   limits:
-    cpu: "1"
-    memory: 1Gi
+    cpu: "2"
+    memory: 2Gi
     ephemeral-storage: 2Gi
+
+networkPolicy:
+  enabled: false
+  r5dAppPodSelector:
+    app: r5d-dev

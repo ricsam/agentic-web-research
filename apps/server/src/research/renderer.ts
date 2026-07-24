@@ -1,7 +1,7 @@
 import { chromium, type Browser } from "playwright";
 import { JSDOM } from "jsdom";
 import { htmlToMarkdown } from "./markdown";
-import { assertSafeHttpUrl } from "./urlSafety";
+import { assertSafeHttpUrl, UnsafeUrlError } from "./urlSafety";
 
 export type RenderedPage = {
   url: string;
@@ -17,6 +17,7 @@ const userAgent = "Mozilla/5.0 (compatible; agentic-web-research/0.1; +https://g
 type RenderOptions = {
   timeoutMs: number;
   allowPrivateNetworks: boolean;
+  signal?: AbortSignal;
 };
 
 function networkIdleGraceMs(timeoutMs: number) {
@@ -56,9 +57,44 @@ function extractLinks(html: string, finalUrl: string) {
 }
 
 function combineRenderErrors(primary: unknown, fallback: unknown) {
+  if (fallback instanceof UnsafeUrlError) return fallback;
+  if (primary instanceof UnsafeUrlError) return primary;
   const primaryMessage = primary instanceof Error ? primary.message : String(primary);
   const fallbackMessage = fallback instanceof Error ? fallback.message : String(fallback);
   return new Error(`${primaryMessage}; fallback fetch also failed: ${fallbackMessage}`);
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("Request aborted");
+  }
+}
+
+async function fetchHtmlWithSafeRedirects(
+  inputUrl: string,
+  options: RenderOptions
+): Promise<{ response: Response; finalUrl: URL }> {
+  let currentUrl = await assertSafeHttpUrl(inputUrl, options.allowPrivateNetworks);
+  for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+    throwIfAborted(options.signal);
+    const response = await fetch(currentUrl, {
+      signal: options.signal,
+      redirect: "manual",
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": userAgent
+      }
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, finalUrl: currentUrl };
+    }
+
+    const location = response.headers.get("location");
+    if (!location) throw new Error(`Redirect response ${response.status} omitted Location`);
+    currentUrl = await assertSafeHttpUrl(new URL(location, currentUrl).toString(), options.allowPrivateNetworks);
+  }
+
+  throw new Error("Too many redirects");
 }
 
 export class WebRenderer {
@@ -67,10 +103,12 @@ export class WebRenderer {
   constructor(private readonly headless: boolean) {}
 
   async render(inputUrl: string, options: RenderOptions): Promise<RenderedPage> {
+    throwIfAborted(options.signal);
     const safeUrl = await assertSafeHttpUrl(inputUrl, options.allowPrivateNetworks);
     try {
       return await this.renderWithBrowser(inputUrl, safeUrl, options);
     } catch (browserError) {
+      throwIfAborted(options.signal);
       try {
         return await this.renderWithFetch(inputUrl, safeUrl, options);
       } catch (fallbackError) {
@@ -81,15 +119,13 @@ export class WebRenderer {
 
   private async renderWithFetch(inputUrl: string, safeUrl: URL, options: RenderOptions): Promise<RenderedPage> {
     const controller = new AbortController();
+    const abort = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", abort, { once: true });
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
-      const response = await fetch(safeUrl, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: {
-          Accept: "text/html,application/xhtml+xml",
-          "User-Agent": userAgent
-        }
+      const { response, finalUrl } = await fetchHtmlWithSafeRedirects(safeUrl.toString(), {
+        ...options,
+        signal: controller.signal
       });
 
       if (!response.ok) throw new Error(`HTTP fetch failed with ${response.status}`);
@@ -98,18 +134,20 @@ export class WebRenderer {
       }
 
       const html = await response.text();
-      const finalUrl = response.url || safeUrl.toString();
-      const converted = htmlToMarkdown(html, finalUrl);
+      const finalUrlString = response.url || finalUrl.toString();
+      await assertSafeHttpUrl(finalUrlString, options.allowPrivateNetworks);
+      const converted = htmlToMarkdown(html, finalUrlString);
 
       return {
         url: inputUrl,
-        finalUrl,
-        title: converted.title || finalUrl,
+        finalUrl: finalUrlString,
+        title: converted.title || finalUrlString,
         markdown: converted.markdown,
-        links: extractLinks(html, finalUrl)
+        links: extractLinks(html, finalUrlString)
       };
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abort);
     }
   }
 
@@ -118,12 +156,22 @@ export class WebRenderer {
     const context = await browser.newContext({
       userAgent
     });
+    const abort = () => {
+      void context.close().catch(() => undefined);
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
     await context.route("**/*", async (route) => {
-      if (blockedResourceTypes.has(route.request().resourceType())) {
+      const request = route.request();
+      if (blockedResourceTypes.has(request.resourceType())) {
         await route.abort();
         return;
       }
-      await route.continue();
+      try {
+        await assertSafeHttpUrl(request.url(), options.allowPrivateNetworks);
+        await route.continue();
+      } catch {
+        await route.abort("blockedbyclient");
+      }
     });
     const page = await context.newPage();
 
@@ -137,6 +185,7 @@ export class WebRenderer {
       await page.locator("body").waitFor({ state: "attached", timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
       const html = await page.content();
       const finalUrl = page.url();
+      await assertSafeHttpUrl(finalUrl, options.allowPrivateNetworks);
       const fallbackTitle = await page.title();
       const links = await page.$$eval("a[href]", (anchors) => {
         const seen = new Set<string>();
@@ -165,6 +214,7 @@ export class WebRenderer {
         links
       };
     } finally {
+      options.signal?.removeEventListener("abort", abort);
       await context.close();
     }
   }
@@ -179,12 +229,16 @@ export class WebRenderer {
 
   private browser() {
     this.browserPromise ??= chromium
-      .launch({ headless: this.headless, args: ["--disable-dev-shm-usage"] })
+      .launch({ headless: this.headless })
       .catch((error) => {
         this.browserPromise = null;
         throw error;
       });
     return this.browserPromise;
   }
-}
 
+  async checkAvailability() {
+    const browser = await this.browser();
+    return browser.isConnected();
+  }
+}

@@ -8,7 +8,7 @@ data:
     use_default_settings: true
 
     server:
-      secret_key: {{ .Values.searxng.secretKey | quote }}
+      secret_key: "overridden-by-SEARXNG_SECRET"
       limiter: false
       image_proxy: false
 

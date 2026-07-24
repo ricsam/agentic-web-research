@@ -24,8 +24,14 @@ import { createApiKey } from "../auth/keys";
 import { runResearch } from "../research/engine";
 import { searchWeb } from "../research/search";
 import { createSseEmitter, prepareSse } from "../utils/sse";
+import type { ResearchRuntime } from "../research/runtime";
 
-export async function registerAdminRoutes(app: FastifyInstance, db: Database, config: AppConfig) {
+export async function registerAdminRoutes(
+  app: FastifyInstance,
+  db: Database,
+  config: AppConfig,
+  runtime: ResearchRuntime
+) {
   const secureCookies = config.NODE_ENV === "production";
 
   app.post("/admin/api/login", async (request, reply) => {
@@ -171,6 +177,12 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
     if (!session) return;
 
     const body = ResearchRequestSchema.parse(request.body);
+    if (!runtime.researchTasks.tryAcquire()) {
+      return reply
+        .code(429)
+        .header("Retry-After", runtime.retryAfterSeconds)
+        .send({ error: "Research service is at capacity", retryAfterSeconds: runtime.retryAfterSeconds });
+    }
     const defaults = await db.getResearchDefaults();
     const taskId = await db.insertTask({
       apiKeyId: null,
@@ -181,6 +193,8 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
 
     prepareSse(reply);
     const emit = createSseEmitter(db, reply, taskId);
+    const controller = new AbortController();
+    request.raw.once("aborted", () => controller.abort(new Error("Client disconnected")));
 
     try {
       await runResearch({
@@ -189,14 +203,17 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
         defaults,
         config,
         db,
-        emit
+        emit,
+        runtime,
+        signal: controller.signal
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown research error";
       await db.failTask(taskId, message);
       await emit("error", { message });
     } finally {
-      reply.raw.end();
+      runtime.researchTasks.release();
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
     }
 
     return reply;
@@ -261,4 +278,3 @@ export async function registerAdminRoutes(app: FastifyInstance, db: Database, co
     return { status, checks, id: randomUUID() };
   });
 }
-

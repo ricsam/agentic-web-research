@@ -9,6 +9,9 @@ This file is served from <website>/llms.txt and is intended to help LLMs and age
 - Website and human documentation: <website>/
 - LLM documentation: <website>/llms.txt
 - Health check: <website>/healthz
+- Readiness check: <website>/readyz
+- Authenticated search API: <website>/v1/search
+- Authenticated page-read API: <website>/v1/read
 - Authenticated research API: <website>/v1/research
 - Public demo configuration: <website>/v1/demo/config
 - Public demo research API: <website>/v1/demo/research
@@ -29,6 +32,8 @@ agentic-web-research runs a focused research loop for AI agents:
 
 Use it when an agent needs fresh web evidence with citations instead of relying only on a static corpus.
 
+The authenticated API also exposes lower-level search and page-reading primitives for agents that want to perform their own synthesis.
+
 ## Authentication
 
 Production research requests require an API key created in the admin console.
@@ -40,6 +45,31 @@ Authorization: Bearer awr_...
 ```
 
 Do not expose production API keys in browser-only clients.
+
+## Authenticated search API
+
+Endpoint: `POST <website>/v1/search`
+
+```json
+{
+  "query": "latest stable Bun release",
+  "limit": 5
+}
+```
+
+`query` is required and `limit` is an optional integer from 1 to 10. The JSON response contains the normalized query and a `results` array with title, URL, snippet, engine, and score fields when available.
+
+## Authenticated page-read API
+
+Endpoint: `POST <website>/v1/read`
+
+```json
+{
+  "url": "https://bun.sh/blog"
+}
+```
+
+The JSON response contains the requested and final URLs, page title, readable Markdown, discovered links, and a `truncated` flag. Only public HTTP and HTTPS URLs are allowed.
 
 ## Authenticated research API
 
@@ -58,6 +88,7 @@ Request JSON:
 ```json
 {
   "query": "Compare agentic web research with classic RAG",
+  "sourceUrls": ["https://example.com/required-source"],
   "maxConcurrency": 2,
   "maxDepth": 2,
   "maxPages": 4,
@@ -68,6 +99,7 @@ Request JSON:
 Fields:
 
 - `query` (required string): Research question or task, 1 to 2000 characters.
+- `sourceUrls` (optional array): Up to 8 public HTTP/HTTPS URLs that the research agent should inspect.
 - `maxConcurrency` (optional integer): Concurrent page renders, 1 to 8.
 - `maxDepth` (optional integer): Navigation depth, 1 to 8.
 - `maxPages` (optional integer): Maximum rendered pages, 1 to 32.
@@ -129,14 +161,15 @@ data: {"type":"final","taskId":"...","at":"...","payload":{"answer":"...","sourc
 ## Operations notes
 
 - Configure the active LLM provider, API keys, and research limits in the admin console at <website>/admin.
+- Deployments may instead bootstrap one API key and the active LLM provider from environment variables.
 - The LLM provider must be OpenAI API compatible.
 - The service supports Docker Compose and Helm deployments.
 - Helm repository URL: `<website>/charts`.
-- Private network rendering is disabled by default unless explicitly allowed by admin research settings.
+- Private network rendering is disabled for authenticated search/read/research APIs.
 
 ## Recommended agent behavior
 
-- Prefer `POST /v1/research` with an API key for production agent workflows.
+- Use `POST /v1/search` to discover sources, `POST /v1/read` for one exact HTML page, and `POST /v1/research` for broad multi-source synthesis.
 - Use `POST /v1/demo/research` only for demos or smoke tests.
 - Parse SSE events incrementally and append `answer_delta` text for live UI updates.
 - Treat `final` as the authoritative completed answer.

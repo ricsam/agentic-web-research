@@ -14,6 +14,9 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -22,6 +25,8 @@ spec:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
@@ -37,20 +42,61 @@ spec:
             - name: ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "agentic-web-research.fullname" . }}
-                  key: ADMIN_PASSWORD
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.adminPassword }}
             - name: APP_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "agentic-web-research.fullname" . }}
-                  key: APP_SECRET
-            - name: DATABASE_URL
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.appSecret }}
+            - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "agentic-web-research.fullname" . }}
-                  key: DATABASE_URL
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.postgresPassword }}
+            - name: DATABASE_URL
+              {{- if .Values.postgres.externalDatabaseUrl }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.databaseUrl }}
+              {{- else }}
+              value: "postgres://{{ .Values.postgres.username }}:$(POSTGRES_PASSWORD)@{{ include "agentic-web-research.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+              {{- end }}
             - name: SEARXNG_URL
               value: {{- if .Values.searxng.externalUrl }} {{ .Values.searxng.externalUrl | quote }}{{- else }} "http://{{ include "agentic-web-research.fullname" . }}-searxng:8080"{{- end }}
+            - name: BOOTSTRAP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.bootstrapApiKey }}
+                  optional: true
+            - name: BOOTSTRAP_LLM_ENDPOINT
+              value: {{ .Values.bootstrapLlm.endpoint | quote }}
+            - name: BOOTSTRAP_LLM_MODEL
+              value: {{ .Values.bootstrapLlm.model | quote }}
+            - name: BOOTSTRAP_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.bootstrapLlmApiKey }}
+                  optional: true
+            - name: BOOTSTRAP_LLM_HEADERS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-web-research.secretName" . }}
+                  key: {{ .Values.secretKeys.bootstrapLlmHeadersJson }}
+                  optional: true
+            - name: BOOTSTRAP_LLM_TEMPERATURE
+              value: {{ .Values.bootstrapLlm.temperature | quote }}
+            - name: BOOTSTRAP_LLM_MAX_OUTPUT_TOKENS
+              value: {{ .Values.bootstrapLlm.maxOutputTokens | quote }}
+            - name: MAX_ACTIVE_RESEARCH_TASKS
+              value: {{ .Values.capacity.maxActiveResearchTasks | quote }}
+            - name: MAX_ACTIVE_PAGE_RENDERS
+              value: {{ .Values.capacity.maxActivePageRenders | quote }}
+            - name: CAPACITY_RETRY_AFTER_SECONDS
+              value: {{ .Values.capacity.retryAfterSeconds | quote }}
             - name: ADMIN_DIST_DIR
               value: ../admin/dist
             - name: CHART_REPO_DIR
@@ -58,7 +104,9 @@ spec:
             - name: PLAYWRIGHT_HEADLESS
               value: "true"
             - name: PLAYWRIGHT_BROWSERS_PATH
-              value: {{ .Values.playwright.browsersPath | default "/ms-playwright" | quote }}
+              value: {{ .Values.playwright.browsersPath | quote }}
+            - name: HOME
+              value: /tmp/home
             - name: DEMO_RESEARCH_ENABLED
               value: {{ .Values.demo.enabled | quote }}
             - name: DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS
@@ -75,12 +123,17 @@ spec:
               value: {{ .Values.demo.pageTimeoutMs | quote }}
             - name: DEMO_RESEARCH_TIMEOUT_MS
               value: {{ .Values.demo.timeoutMs | quote }}
-          {{- if (.Values.playwright.installBrowsersOnStartup | default false) }}
+          {{- if .Values.playwright.installBrowsersOnStartup }}
           command:
             - sh
             - -lc
             - cd /app/apps/server && bun node_modules/playwright/cli.js install chromium && exec bun src/index.ts
           {{- end }}
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /healthz
@@ -90,7 +143,7 @@ spec:
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
@@ -104,4 +157,11 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

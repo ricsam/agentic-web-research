@@ -14,6 +14,16 @@ const config: AppConfig = {
   ADMIN_DIST_DIR: "../admin/dist",
   CHART_REPO_DIR: "../../deploy/helm/repo",
   PLAYWRIGHT_HEADLESS: true,
+  BOOTSTRAP_API_KEY: undefined,
+  BOOTSTRAP_LLM_ENDPOINT: undefined,
+  BOOTSTRAP_LLM_MODEL: undefined,
+  BOOTSTRAP_LLM_API_KEY: undefined,
+  BOOTSTRAP_LLM_HEADERS_JSON: "{}",
+  BOOTSTRAP_LLM_TEMPERATURE: 0.2,
+  BOOTSTRAP_LLM_MAX_OUTPUT_TOKENS: 4096,
+  MAX_ACTIVE_RESEARCH_TASKS: 4,
+  MAX_ACTIVE_PAGE_RENDERS: 8,
+  CAPACITY_RETRY_AFTER_SECONDS: 10,
   DEMO_RESEARCH_ENABLED: true,
   DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS: 600000,
   DEMO_RESEARCH_RATE_LIMIT_MAX: 5,
@@ -61,5 +71,23 @@ describe("public demo research helpers", () => {
     expect(docs).toContain("# agentic-web-research");
     expect(docs).toContain("http://localhost:8080/v1/research");
     expect(docs).not.toContain("<website>");
+  });
+
+  test("caps rendered page content and links", async () => {
+    const { formatWebReadResult } = await import("./public");
+    const result = formatWebReadResult({
+      url: "https://example.com",
+      finalUrl: "https://example.com/final",
+      title: "Example",
+      markdown: "x".repeat(40_001),
+      links: Array.from({ length: 35 }, (_, index) => ({
+        title: `Link ${index}`,
+        url: `https://example.com/${index}`
+      }))
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.markdown).toEndWith("[Content truncated]");
+    expect(result.links).toHaveLength(30);
   });
 });

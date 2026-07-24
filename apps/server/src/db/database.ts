@@ -221,6 +221,26 @@ export class Database {
     return provider;
   }
 
+  async upsertBootstrapLlmProvider(input: OpenAiCompatibleProvider) {
+    const parsed = OpenAiCompatibleProviderSchema.parse(input);
+    const settings = await this.getLlmSettings();
+    const now = new Date().toISOString();
+    const existing = settings.providers.find((provider) => provider.id === parsed.id);
+    const provider = OpenAiCompatibleProviderSchema.parse({
+      ...existing,
+      ...parsed,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    });
+    const providers = settings.providers.filter((candidate) => candidate.id !== provider.id);
+    providers.push(provider);
+    await this.saveLlmSettingsInternal({
+      activeProviderId: provider.id,
+      providers
+    });
+    return provider;
+  }
+
   async updateLlmProvider(id: string, patch: OpenAiCompatibleProviderUpdate) {
     const settings = await this.getLlmSettings();
     const providerIndex = settings.providers.findIndex((provider) => provider.id === id);

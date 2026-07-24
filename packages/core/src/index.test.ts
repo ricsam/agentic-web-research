@@ -5,7 +5,9 @@ import {
   LlmSettingsSchema,
   OpenAiCompatibleProviderSchema,
   ResearchDefaultsSchema,
-  ResearchRequestSchema
+  ResearchRequestSchema,
+  WebReadRequestSchema,
+  WebSearchRequestSchema
 } from "./index";
 
 describe("core schemas", () => {
@@ -19,7 +21,26 @@ describe("core schemas", () => {
 
   test("validates research requests", () => {
     expect(ResearchRequestSchema.parse({ query: "test" }).query).toBe("test");
+    expect(ResearchRequestSchema.parse({
+      query: "test",
+      sourceUrls: ["https://example.com"]
+    }).sourceUrls).toEqual(["https://example.com"]);
     expect(() => ResearchRequestSchema.parse({ query: "" })).toThrow();
+    expect(() => ResearchRequestSchema.parse({
+      query: "test",
+      sourceUrls: Array.from({ length: 9 }, (_, index) => `https://example.com/${index}`)
+    })).toThrow();
+  });
+
+  test("validates web search and read requests", () => {
+    expect(WebSearchRequestSchema.parse({ query: "test" })).toEqual({
+      query: "test",
+      limit: 5
+    });
+    expect(WebSearchRequestSchema.parse({ query: "test", limit: 10 }).limit).toBe(10);
+    expect(() => WebSearchRequestSchema.parse({ query: "test", limit: 11 })).toThrow();
+    expect(WebReadRequestSchema.parse({ url: "https://example.com" }).url).toBe("https://example.com");
+    expect(() => WebReadRequestSchema.parse({ url: "file:///etc/passwd" })).toThrow();
   });
 
   test("applies llm defaults", () => {
@@ -66,4 +87,3 @@ describe("core schemas", () => {
     expect(() => HeaderMapSchema.parse({ Authorization: "a", authorization: "b" })).toThrow();
   });
 });
-

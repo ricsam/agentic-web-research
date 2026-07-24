@@ -8,13 +8,18 @@ type SearxngResult = {
   score?: number;
 };
 
-export async function searchWeb(searxngUrl: string, query: string): Promise<SearchResult[]> {
+export async function searchWeb(
+  searxngUrl: string,
+  query: string,
+  options: { limit?: number; signal?: AbortSignal } = {}
+): Promise<SearchResult[]> {
   const url = new URL("/search", searxngUrl);
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
   url.searchParams.set("categories", "general");
 
   const response = await fetch(url, {
+    signal: options.signal,
     headers: {
       Accept: "application/json",
       "User-Agent": "agentic-web-research/0.1"
@@ -30,7 +35,7 @@ export async function searchWeb(searxngUrl: string, query: string): Promise<Sear
     .filter((result): result is Required<Pick<SearxngResult, "title" | "url">> & SearxngResult => {
       return typeof result.title === "string" && typeof result.url === "string";
     })
-    .slice(0, 10)
+    .slice(0, options.limit ?? 10)
     .map((result) => ({
       title: result.title,
       url: result.url,
@@ -39,4 +44,3 @@ export async function searchWeb(searxngUrl: string, query: string): Promise<Sear
       score: result.score
     }));
 }
-

@@ -23,8 +23,8 @@ export function createSseEmitter(db: Database, reply: FastifyReply, taskId: stri
       payload
     };
     await db.addResearchEvent(taskId, type, payload);
+    if (reply.raw.destroyed || reply.raw.writableEnded) return;
     reply.raw.write(`event: ${type}\n`);
     reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 }
-

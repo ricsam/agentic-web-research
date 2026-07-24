@@ -6,3 +6,6 @@ agentic-web-research
 {{ include "agentic-web-research.name" . }}
 {{- end -}}
 
+{{- define "agentic-web-research.secretName" -}}
+{{- default (include "agentic-web-research.fullname" .) .Values.existingSecret -}}
+{{- end -}}

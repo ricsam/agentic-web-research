@@ -9,6 +9,7 @@ import type { SseEmitter } from "../utils/sse";
 import { Semaphore } from "../utils/semaphore";
 import { WebRenderer } from "./renderer";
 import { searchWeb } from "./search";
+import type { ResearchRuntime } from "./runtime";
 
 export type ResearchRunInput = {
   taskId: string;
@@ -17,6 +18,8 @@ export type ResearchRunInput = {
   config: AppConfig;
   db: Database;
   emit: SseEmitter;
+  runtime: ResearchRuntime;
+  signal?: AbortSignal;
 };
 
 type RunStats = {
@@ -57,9 +60,55 @@ function trimMarkdown(markdown: string) {
   return markdown.length > maxChars ? `${markdown.slice(0, maxChars)}\n\n[Content truncated]` : markdown;
 }
 
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("Research request aborted");
+  }
+}
+
+function normalizeSourceUrl(input: string) {
+  const url = new URL(input);
+  url.hash = "";
+  return url.toString();
+}
+
+function mergeSearchResults(searchResults: SearchResult[], sourceUrls: string[]) {
+  const seen = new Set<string>();
+  return [
+    ...sourceUrls.map((url) => ({
+      title: url,
+      url,
+      engine: "provided"
+    })),
+    ...searchResults
+  ].filter((result) => {
+    let normalized: string;
+    try {
+      normalized = normalizeSourceUrl(result.url);
+    } catch {
+      return false;
+    }
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    result.url = normalized;
+    return true;
+  });
+}
+
+export function filterRenderedSources(
+  sources: ResearchFinalResult["sources"],
+  renderedSources: ReadonlyMap<string, { title?: string; used: boolean }>
+) {
+  return sources
+    .map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }))
+    .filter((source) => renderedSources.has(source.url));
+}
+
 export async function runResearch(input: ResearchRunInput) {
-  const { taskId, request, defaults, config, db, emit } = input;
+  const { taskId, request, defaults, config, db, emit, runtime } = input;
   const options = mergeOptions(request, defaults);
+  const deadlineSignal = AbortSignal.timeout(options.timeoutMs);
+  const signal = input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal;
   const stats: RunStats = {
     pagesRendered: 0,
     toolCalls: 0,
@@ -67,8 +116,12 @@ export async function runResearch(input: ResearchRunInput) {
   };
   const deadline = Date.now() + options.timeoutMs;
 
+  throwIfAborted(signal);
   await emit("search_started", { query: request.query });
-  const searchResults = await searchWeb(config.SEARXNG_URL, request.query);
+  const searchResults = mergeSearchResults(
+    await searchWeb(config.SEARXNG_URL, request.query, { signal }),
+    request.sourceUrls ?? []
+  );
   stats.searchedAt = new Date().toISOString();
 
   for (const result of searchResults) {
@@ -114,6 +167,7 @@ export async function runResearch(input: ResearchRunInput) {
       model: provider(activeProvider.model),
       temperature: activeProvider.temperature,
       maxOutputTokens: activeProvider.maxOutputTokens,
+      abortSignal: signal,
       stopWhen: stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16)),
       system:
         "You are a focused web research agent. Use the provided search results and page-viewing tool to gather enough evidence. " +
@@ -136,6 +190,7 @@ export async function runResearch(input: ResearchRunInput) {
             sourceUrl: z.string().url().optional()
           }),
           execute: async ({ url, reason, sourceUrl }) => {
+            throwIfAborted(signal);
             if (Date.now() > deadline) {
               return { error: "Research task timed out" };
             }
@@ -154,15 +209,22 @@ export async function runResearch(input: ResearchRunInput) {
             await emit("page_fetch_started", { url, reason, depth });
 
             try {
-              const rendered = await semaphore.run(() =>
-                renderer.render(url, {
-                  timeoutMs: options.pageTimeoutMs,
-                  allowPrivateNetworks: options.allowPrivateNetworks
-                })
+              const rendered = await semaphore.run(
+                () =>
+                  runtime.pageRenders.run(
+                    () =>
+                      renderer.render(url, {
+                        timeoutMs: options.pageTimeoutMs,
+                        allowPrivateNetworks: options.allowPrivateNetworks,
+                        signal
+                      }),
+                    signal
+                  ),
+                signal
               );
               depths.set(rendered.finalUrl, depth);
               depths.set(url, depth);
-              renderedSources.set(rendered.finalUrl, { title: rendered.title, used: true });
+              renderedSources.set(normalizeSourceUrl(rendered.finalUrl), { title: rendered.title, used: true });
 
               await emit("page_fetch_finished", {
                 url: rendered.finalUrl,
@@ -200,8 +262,9 @@ export async function runResearch(input: ResearchRunInput) {
             notes: z.string().optional()
           }),
           execute: async (finalResult) => {
-            submitted = finalResult;
-            await emit("source", { sources: finalResult.sources });
+            const sources = filterRenderedSources(finalResult.sources, renderedSources);
+            submitted = { ...finalResult, sources };
+            await emit("source", { sources });
             return { accepted: true };
           }
         })
@@ -209,6 +272,7 @@ export async function runResearch(input: ResearchRunInput) {
     });
 
     for await (const part of result.fullStream as AsyncIterable<Record<string, unknown>>) {
+      throwIfAborted(signal);
       if (part.type === "text-delta") {
         const text = typeof part.text === "string" ? part.text : typeof part.delta === "string" ? part.delta : "";
         if (text) {
@@ -252,4 +316,3 @@ export async function runResearch(input: ResearchRunInput) {
     await renderer.close();
   }
 }
-
