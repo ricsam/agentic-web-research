@@ -71,13 +71,21 @@ function publicBaseUrl(config: AppConfig, request: FastifyRequest) {
 
 export function createRequestAbortController(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
+  const socket = request.raw.socket;
   const abort = () => {
+    cleanup();
     if (!controller.signal.aborted) controller.abort(new Error("Client disconnected"));
   };
+  const cleanup = () => {
+    request.raw.off("aborted", abort);
+    reply.raw.off("close", abort);
+    reply.raw.off("finish", cleanup);
+    socket.off("close", abort);
+  };
   request.raw.once("aborted", abort);
-  // A prematurely closed response can already report writableEnded in Node.
-  // Always abort on close; a close after the normal final event is harmless.
   reply.raw.once("close", abort);
+  reply.raw.once("finish", cleanup);
+  socket.once("close", abort);
   return controller;
 }
 

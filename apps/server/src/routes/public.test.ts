@@ -37,7 +37,9 @@ const config: AppConfig = {
 
 describe("public demo research helpers", () => {
   test("aborts work when the response closes even if Node marks it ended", () => {
+    const socket = new EventEmitter();
     const requestRaw = new EventEmitter();
+    Object.assign(requestRaw, { socket });
     const replyRaw = new EventEmitter();
     Object.assign(replyRaw, { writableEnded: true });
     const controller = createRequestAbortController(
@@ -49,6 +51,21 @@ describe("public demo research helpers", () => {
 
     expect(controller.signal.aborted).toBe(true);
     expect(controller.signal.reason).toEqual(new Error("Client disconnected"));
+  });
+
+  test("aborts work when the client socket closes", () => {
+    const socket = new EventEmitter();
+    const requestRaw = new EventEmitter();
+    Object.assign(requestRaw, { socket });
+    const replyRaw = new EventEmitter();
+    const controller = createRequestAbortController(
+      { raw: requestRaw } as never,
+      { raw: replyRaw } as never
+    );
+
+    socket.emit("close");
+
+    expect(controller.signal.aborted).toBe(true);
   });
 
   test("builds demo defaults from config", () => {
