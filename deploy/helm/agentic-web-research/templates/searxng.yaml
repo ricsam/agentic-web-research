@@ -15,16 +15,12 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        seccompProfile:
-          type: RuntimeDefault
+        {{- toYaml .Values.searxng.podSecurityContext | nindent 8 }}
       containers:
         - name: searxng
           image: {{ .Values.searxng.image | quote }}
           securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
+            {{- toYaml .Values.searxng.securityContext | nindent 12 }}
           ports:
             - containerPort: 8080
           env:

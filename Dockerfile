@@ -1,5 +1,7 @@
 FROM oven/bun:1.3.13 AS app
 
+LABEL org.opencontainers.image.source="https://github.com/ricsam/agentic-web-research"
+
 WORKDIR /app
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright

@@ -66,6 +66,17 @@ postgres:
   storageSize: 10Gi
   storageClassName: rook-ceph-block
   externalDatabaseUrl: ""
+  podSecurityContext:
+    fsGroup: 70
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
   resources:
     requests:
       cpu: 100m
@@ -78,6 +89,17 @@ searxng:
   enabled: true
   image: searxng/searxng:latest
   externalUrl: ""
+  podSecurityContext:
+    fsGroup: 977
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 977
+    runAsGroup: 977
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
   resources:
     requests:
       cpu: 100m
