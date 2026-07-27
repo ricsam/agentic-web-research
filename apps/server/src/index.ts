@@ -104,6 +104,7 @@ const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
   await app.close();
+  await researchRuntime.renderer.close();
   await db.close();
   process.exit(0);
 };

@@ -125,8 +125,12 @@ spec:
               value: {{ .Values.demo.timeoutMs | quote }}
           {{- if .Values.playwright.installBrowsersOnStartup }}
           command:
+            - /usr/bin/tini
+            - -g
+            - --
             - sh
             - -lc
+          args:
             - cd /app/apps/server && bun node_modules/playwright/cli.js install chromium && exec bun src/index.ts
           {{- end }}
           volumeMounts:

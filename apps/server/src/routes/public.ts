@@ -222,6 +222,8 @@ async function runResearchSse(input: {
   const cleanupLease = request.headers["x-research-lease"] === "required"
     ? registerResearchLease(taskId, apiKeyId, controller)
     : undefined;
+  const deadlineSignal = AbortSignal.timeout(body.timeoutMs ?? defaults.timeoutMs);
+  const researchSignal = AbortSignal.any([controller.signal, deadlineSignal]);
   prepareSse(reply);
   const emit = createSseEmitter(db, reply, taskId);
 
@@ -235,9 +237,9 @@ async function runResearchSse(input: {
         db,
         emit,
         runtime,
-        signal: controller.signal
+        signal: researchSignal
       }),
-      controller.signal
+      researchSignal
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown research error";
@@ -294,15 +296,6 @@ export async function registerPublicRoutes(
       checks.searxng = { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
 
-    const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
-    try {
-      checks.browser = (await renderer.checkAvailability()) ? { ok: true } : { ok: false, message: "Browser disconnected" };
-    } catch (error) {
-      checks.browser = { ok: false, message: error instanceof Error ? error.message : String(error) };
-    } finally {
-      await renderer.close().catch(() => undefined);
-    }
-
     const provider = await db.getActiveLlmProvider();
     checks.llm = provider && hasProviderCredentials(provider)
       ? { ok: true }
@@ -345,17 +338,12 @@ export async function registerPublicRoutes(
     try {
       const defaults = await db.getResearchDefaults();
       const attempt = await runtime.pageRenders.tryRun(async () => {
-        const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
-        try {
-          const rendered = await renderer.render(body.url, {
-            timeoutMs: defaults.pageTimeoutMs,
-            allowPrivateNetworks: false,
-            signal: controller.signal
-          });
-          return formatWebReadResult(rendered);
-        } finally {
-          await renderer.close();
-        }
+        const rendered = await runtime.renderer.render(body.url, {
+          timeoutMs: defaults.pageTimeoutMs,
+          allowPrivateNetworks: false,
+          signal: controller.signal
+        });
+        return formatWebReadResult(rendered);
       });
       if (!attempt.accepted) return sendCapacityError(reply, runtime);
       return attempt.value;

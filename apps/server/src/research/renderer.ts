@@ -16,6 +16,7 @@ export type RenderedPage = {
 
 const blockedResourceTypes = new Set(["font", "image", "media"]);
 const userAgent = "Mozilla/5.0 (compatible; agentic-web-research/0.1; +https://github.com/self-hosted/agentic-web-research)";
+const MAX_BROWSER_LAUNCH_TIMEOUT_MS = 15_000;
 
 type RenderOptions = {
   timeoutMs: number;
@@ -244,7 +245,7 @@ export class WebRenderer {
   }
 
   private async renderWithBrowser(inputUrl: string, safeUrl: URL, options: RenderOptions): Promise<RenderedPage> {
-    const browser = await this.browser();
+    const browser = await this.browser(Math.min(options.timeoutMs, MAX_BROWSER_LAUNCH_TIMEOUT_MS));
     const context = await browser.newContext({
       userAgent
     });
@@ -298,22 +299,43 @@ export class WebRenderer {
     const browserPromise = this.browserPromise;
     this.browserPromise = null;
     if (!browserPromise) return;
-    const browser = await browserPromise;
-    await browser.close({ reason: "WebRenderer closed" });
+    const browser = await browserPromise.catch(() => null);
+    if (browser?.isConnected()) {
+      await browser.close({ reason: "WebRenderer closed" });
+    }
   }
 
-  private browser() {
-    this.browserPromise ??= chromium
-      .launch({ headless: this.headless })
-      .catch((error) => {
-        this.browserPromise = null;
-        throw error;
+  private browser(timeoutMs = MAX_BROWSER_LAUNCH_TIMEOUT_MS): Promise<Browser> {
+    const currentPromise = this.browserPromise;
+    if (currentPromise) {
+      return currentPromise.then((browser) => {
+        if (browser.isConnected()) return browser;
+        if (this.browserPromise === currentPromise) {
+          this.browserPromise = null;
+        }
+        return this.browser(timeoutMs);
       });
-    return this.browserPromise;
-  }
+    }
 
-  async checkAvailability() {
-    const browser = await this.browser();
-    return browser.isConnected();
+    const launchPromise = chromium.launch({
+      headless: this.headless,
+      timeout: timeoutMs
+    });
+    this.browserPromise = launchPromise;
+    void launchPromise.then(
+      (browser) => {
+        browser.once("disconnected", () => {
+          if (this.browserPromise === launchPromise) {
+            this.browserPromise = null;
+          }
+        });
+      },
+      () => {
+        if (this.browserPromise === launchPromise) {
+          this.browserPromise = null;
+        }
+      }
+    );
+    return launchPromise;
   }
 }

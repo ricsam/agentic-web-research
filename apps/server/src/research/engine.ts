@@ -7,7 +7,6 @@ import type { Database } from "../db/database";
 import { hasProviderCredentials } from "../db/database";
 import type { SseEmitter } from "../utils/sse";
 import { Semaphore } from "../utils/semaphore";
-import { WebRenderer } from "./renderer";
 import { searchWeb } from "./search";
 import type { ResearchRuntime } from "./runtime";
 
@@ -166,7 +165,7 @@ export async function runResearch(input: ResearchRunInput) {
     headerNames: Object.keys(activeProvider.headers)
   });
 
-  const renderer = new WebRenderer(config.PLAYWRIGHT_HEADLESS);
+  const renderer = runtime.renderer;
   const semaphore = new Semaphore(options.maxConcurrency);
   const depths = new Map<string, number>();
   const renderedSources = new Map<string, { title?: string; used: boolean }>();
@@ -177,7 +176,7 @@ export async function runResearch(input: ResearchRunInput) {
     depths.set(result.url, 1);
   }
 
-  try {
+  const runAgent = async () => {
     const provider = createOpenAICompatible({
       name: activeProvider.name || "admin-configured",
       apiKey: activeProvider.apiKey,
@@ -340,7 +339,7 @@ export async function runResearch(input: ResearchRunInput) {
     await emit("final", finalResult as unknown as Record<string, unknown>);
     await db.completeTask(taskId, finalResult.answer, stats);
     return finalResult;
-  } finally {
-    await renderer.close();
-  }
+  };
+
+  return runAgent();
 }

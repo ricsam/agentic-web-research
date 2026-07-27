@@ -7,7 +7,7 @@ WORKDIR /app
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates curl tini \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock tsconfig.json tsconfig.base.json ./
@@ -29,6 +29,10 @@ ENV NODE_ENV=production
 
 EXPOSE 8080
 
+WORKDIR /app/apps/server
+
 USER bun
 
-CMD ["bun", "run", "--cwd", "apps/server", "start"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
+
+CMD ["bun", "src/index.ts"]
