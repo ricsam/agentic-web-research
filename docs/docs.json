@@ -1,0 +1,111 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "agentic-web-research",
+  "description": "Self-hosted web research API for AI agents",
+  "colors": {
+    "primary": "#0F766E",
+    "light": "#14B8A6",
+    "dark": "#5EEAD4"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/configure-provider",
+              "guides/consume-sse"
+            ]
+          },
+          {
+            "group": "Deploy",
+            "pages": [
+              "deployment/docker-compose",
+              "deployment/helm"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "icon": "braces",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/authentication",
+              "api-reference/events"
+            ]
+          },
+          {
+            "group": "Research API",
+            "openapi": "openapi.json"
+          }
+        ]
+      }
+    ]
+  },
+  "api": {
+    "playground": {
+      "display": "interactive"
+    },
+    "examples": {
+      "defaults": "required",
+      "languages": [
+        "curl",
+        "javascript",
+        "python"
+      ]
+    }
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "llms.txt",
+        "href": "https://github.com/ricsam/agentic-web-research/blob/main/llms.txt"
+      }
+    ],
+    "primary": {
+      "type": "github",
+      "label": "GitHub",
+      "href": "https://github.com/ricsam/agentic-web-research"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "download-spec",
+      "chatgpt",
+      "claude"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/ricsam/agentic-web-research"
+    }
+  },
+  "markdown": {
+    "instructions": "Use the authenticated POST /v1/research endpoint for production. Parse responses as Server-Sent Events and treat the final event as authoritative."
+  }
+}

@@ -1,0 +1,440 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "agentic-web-research API",
+    "version": "0.1.0",
+    "description": "Start cited web research tasks and receive progress as Server-Sent Events."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development; replace with your deployed service URL"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Research",
+      "description": "Run authenticated research tasks"
+    },
+    {
+      "name": "Demo",
+      "description": "Inspect and use the rate-limited public demo"
+    },
+    {
+      "name": "Operations",
+      "description": "Check basic service health"
+    }
+  ],
+  "paths": {
+    "/v1/research": {
+      "post": {
+        "tags": [
+          "Research"
+        ],
+        "operationId": "runResearch",
+        "summary": "Run research",
+        "description": "Starts an authenticated research task and streams typed Server-Sent Events until the task completes or fails.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchRequest"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Focused research task",
+                  "value": {
+                    "query": "Compare agentic web research with classic RAG",
+                    "maxConcurrency": 2,
+                    "maxDepth": 2,
+                    "maxPages": 4,
+                    "timeoutMs": 120000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Research event stream. Each `data` line contains a JSON ResearchEvent envelope.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "event: search_started\ndata: {\"type\":\"search_started\",\"taskId\":\"38c7e431-bdf4-4682-9b1a-4be849748a4a\",\"at\":\"2026-01-01T00:00:00.000Z\",\"payload\":{\"query\":\"Compare agentic web research with classic RAG\"}}\n\nevent: final\ndata: {\"type\":\"final\",\"taskId\":\"38c7e431-bdf4-4682-9b1a-4be849748a4a\",\"at\":\"2026-01-01T00:01:00.000Z\",\"payload\":{\"answer\":\"...\",\"sources\":[]}}\n\n"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/demo/config": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "operationId": "getDemoConfig",
+        "summary": "Get demo configuration",
+        "description": "Returns whether the public demo is enabled and the rate and research limits applied by the server.",
+        "responses": {
+          "200": {
+            "description": "Current public demo configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoConfig"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/demo/research": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "operationId": "runDemoResearch",
+        "summary": "Run demo research",
+        "description": "Runs an unauthenticated, rate-limited research task. The server clamps requested values to the configured demo limits.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Research event stream",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Maximum requests allowed in the current window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests remaining in the current window"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "Time when the current window resets"
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Public demo is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Demo research is disabled"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demo rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "retryAfterMs": {
+                          "type": "integer"
+                        },
+                        "resetAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "getHealth",
+        "summary": "Check service health",
+        "description": "Checks that the API server can query PostgreSQL.",
+        "responses": {
+          "200": {
+            "description": "The API and database are available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Research API key created in the admin console. Keys begin with `awr_`."
+      }
+    },
+    "schemas": {
+      "ResearchRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Research question or task"
+          },
+          "maxConcurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Maximum concurrent page renders"
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Maximum link-navigation depth"
+          },
+          "maxPages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32,
+            "description": "Maximum number of rendered pages"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 300000,
+            "description": "Overall research timeout in milliseconds"
+          }
+        }
+      },
+      "ResearchDefaults": {
+        "type": "object",
+        "required": [
+          "maxConcurrency",
+          "maxDepth",
+          "maxPages",
+          "timeoutMs",
+          "pageTimeoutMs",
+          "allowPrivateNetworks"
+        ],
+        "properties": {
+          "maxConcurrency": {
+            "type": "integer"
+          },
+          "maxDepth": {
+            "type": "integer"
+          },
+          "maxPages": {
+            "type": "integer"
+          },
+          "timeoutMs": {
+            "type": "integer"
+          },
+          "pageTimeoutMs": {
+            "type": "integer"
+          },
+          "allowPrivateNetworks": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DemoConfig": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "rateLimit",
+          "defaults"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rateLimit": {
+            "type": "object",
+            "required": [
+              "max",
+              "windowMs"
+            ],
+            "properties": {
+              "max": {
+                "type": "integer"
+              },
+              "windowMs": {
+                "type": "integer"
+              }
+            }
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/ResearchDefaults"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationErrorResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request body failed validation",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationErrorResponse"
+            },
+            "example": {
+              "error": "Validation failed",
+              "issues": []
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "The API key is missing or invalid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Invalid or missing API key"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "An unexpected server error occurred",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Internal server error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

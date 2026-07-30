@@ -1,0 +1,67 @@
+---
+title: "Introduction"
+description: "Self-hosted, cited web research for AI agents"
+---
+
+`agentic-web-research` gives your agents fresh web evidence through one authenticated API. It searches with SearXNG, renders selected pages with Playwright, extracts readable Markdown, and asks an OpenAI-compatible model to return a cited answer.
+
+<CardGroup cols={2}>
+  <Card title="Run your first research task" icon="rocket" href="/quickstart">
+    Deploy the service, configure a model provider, create an API key, and stream an answer.
+  </Card>
+  <Card title="Explore the API" icon="braces" href="/api-reference/introduction">
+    Learn the request shape, authentication model, and streaming response contract.
+  </Card>
+  <Card title="Install with Docker Compose" icon="container" href="/deployment/docker-compose">
+    Start the app, PostgreSQL, and SearXNG on one machine.
+  </Card>
+  <Card title="Install with Helm" icon="boxes" href="/deployment/helm">
+    Run the stack in Kubernetes with bundled or external dependencies.
+  </Card>
+</CardGroup>
+
+## How it works
+
+<Steps>
+  <Step title="Search the web">
+    The service sends the research query to your SearXNG deployment and streams each candidate result.
+  </Step>
+  <Step title="Inspect useful pages">
+    The model chooses pages to render. Playwright loads them, readability extraction converts them to Markdown, and private-network access is blocked by default.
+  </Step>
+  <Step title="Return a cited answer">
+    The model submits an answer and source list while the API streams progress, answer deltas, sources, and a final event over Server-Sent Events.
+  </Step>
+</Steps>
+
+## What you run
+
+| Component | Purpose |
+| --- | --- |
+| API server | Authenticates requests, runs research tasks, and streams SSE events |
+| SearXNG | Supplies web search results |
+| Playwright | Renders JavaScript-heavy pages |
+| PostgreSQL | Stores settings, API keys, tasks, events, and logs |
+| OpenAI-compatible provider | Selects sources and produces the final answer |
+| Admin console | Manages providers, research limits, API keys, health, and activity |
+
+<Note>
+  Model credentials are configured in the admin console rather than environment variables. The service encrypts a provider's API-key field at rest using `APP_SECRET` and redacts secret-looking custom headers in admin responses.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    Go from a local checkout to your first streamed answer.
+  </Card>
+  <Card title="Configure a provider" icon="brain-circuit" href="/guides/configure-provider">
+    Connect OpenAI or another OpenAI-compatible endpoint.
+  </Card>
+  <Card title="Consume the stream" icon="radio" href="/guides/consume-sse">
+    Parse typed events safely in your application.
+  </Card>
+  <Card title="SSE events" icon="list-tree" href="/api-reference/events">
+    See every event type and payload.
+  </Card>
+</CardGroup>

@@ -1,0 +1,94 @@
+---
+title: "Docker Compose"
+description: "Deploy the application, PostgreSQL, and SearXNG on one host"
+---
+
+The included Compose project starts three services:
+
+- `app`: API server, public website, and admin console
+- `postgres`: persistent application data
+- `searxng`: web search backend
+
+## Configure secrets
+
+Create `.env` at the repository root:
+
+```bash
+APP_SECRET=replace-with-a-long-random-secret
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=replace-with-a-strong-password
+DEMO_RESEARCH_ENABLED=false
+```
+
+<Warning>
+  The Compose file contains development-friendly defaults. Set strong values before exposing the app outside your machine.
+</Warning>
+
+## Start
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml up --build -d
+```
+
+Check service status and logs:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml ps
+docker compose -f deploy/compose/docker-compose.yml logs -f app
+```
+
+Open:
+
+- Website: [http://localhost:8080](http://localhost:8080)
+- Admin console: [http://localhost:8080/admin](http://localhost:8080/admin)
+- Health check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
+- SearXNG: [http://localhost:8081](http://localhost:8081)
+
+## Configure the model
+
+Model credentials are not read from `.env`. Sign in to the admin console and follow [Configure a model provider](/guides/configure-provider).
+
+## Environment variables
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `APP_SECRET` | Encrypts provider API keys and signs admin sessions | Insecure example value |
+| `ADMIN_EMAIL` | Bootstrapped admin email | `admin@example.com` |
+| `ADMIN_PASSWORD` | Bootstrapped admin password | `change-me-now` |
+| `DEMO_RESEARCH_ENABLED` | Enables the unauthenticated demo endpoint | `true` |
+| `DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS` | Demo rate-limit window | `600000` |
+| `DEMO_RESEARCH_RATE_LIMIT_MAX` | Demo requests per IP per window | `5` |
+| `DEMO_RESEARCH_MAX_CONCURRENCY` | Maximum demo render concurrency | `2` |
+| `DEMO_RESEARCH_MAX_DEPTH` | Maximum demo navigation depth | `2` |
+| `DEMO_RESEARCH_MAX_PAGES` | Maximum pages per demo run | `4` |
+| `DEMO_RESEARCH_PAGE_TIMEOUT_MS` | Demo timeout for one page | `15000` |
+| `DEMO_RESEARCH_TIMEOUT_MS` | Demo task timeout | `120000` |
+
+The Compose file configures internal values such as `DATABASE_URL` and `SEARXNG_URL` for you.
+
+## Data persistence
+
+PostgreSQL data is stored in the `postgres_data` named volume. Stop services without deleting data:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml down
+```
+
+Delete services and local database data:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml down -v
+```
+
+<Warning>
+  The `-v` command permanently deletes local settings, API keys, tasks, and logs.
+</Warning>
+
+## Update
+
+```bash
+git pull
+docker compose -f deploy/compose/docker-compose.yml up --build -d
+```
+
+The API server applies database migrations during startup.

@@ -1,0 +1,113 @@
+---
+title: "Quickstart"
+description: "Run your first authenticated research request"
+---
+
+This guide starts the full service locally with Docker Compose, configures a model provider, and streams your first cited answer.
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
+- An API key for OpenAI or another OpenAI-compatible model provider
+- `curl`
+
+## Start the service
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/ricsam/agentic-web-research.git
+    cd agentic-web-research
+    ```
+  </Step>
+
+  <Step title="Set deployment secrets">
+    Create `.env` at the repository root:
+
+    ```bash
+    APP_SECRET=replace-with-a-long-random-secret
+    ADMIN_EMAIL=admin@example.com
+    ADMIN_PASSWORD=replace-with-a-strong-password
+    DEMO_RESEARCH_ENABLED=false
+    ```
+
+    `APP_SECRET` must contain at least 16 characters. Use a long random value in production.
+  </Step>
+
+  <Step title="Start the stack">
+    ```bash
+    docker compose -f deploy/compose/docker-compose.yml up --build -d
+    ```
+
+    The application is available at `http://localhost:8080`.
+  </Step>
+
+  <Step title="Configure a model provider">
+    Open [http://localhost:8080/admin](http://localhost:8080/admin), then sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+    Under **Settings**, create an OpenAI-compatible provider. For OpenAI, use:
+
+    | Field | Value |
+    | --- | --- |
+    | Name | `OpenAI` |
+    | Endpoint/Base URL | `https://api.openai.com/v1` |
+    | Model | `gpt-4.1-mini` |
+    | Header name | `Authorization` |
+    | Header value | `Bearer <your-api-key>` |
+
+    The first provider becomes active automatically. For additional providers, click **Use** to make one active.
+  </Step>
+
+  <Step title="Create a research API key">
+    Open the **API keys** tab, create a key, and copy it immediately. The complete key is displayed only once and begins with `awr_`.
+
+    ```bash
+    export AWR_API_KEY="awr_..."
+    ```
+  </Step>
+
+  <Step title="Stream your first answer">
+    ```bash
+    curl -N http://localhost:8080/v1/research \
+      -H "Authorization: Bearer $AWR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -H "Accept: text/event-stream" \
+      -d '{
+        "query": "What changed in the latest stable Bun release?",
+        "maxPages": 4,
+        "maxDepth": 2
+      }'
+    ```
+
+    The response begins with `search_started`, may contain search and page events, and ends with either `final` or a terminal `error`.
+  </Step>
+</Steps>
+
+## Verify the deployment
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+A healthy database returns:
+
+```json
+{"ok":true}
+```
+
+For dependency-level checks, open **Health** in the admin console. It checks PostgreSQL, SearXNG, and the active model configuration.
+
+<Warning>
+  Change the example admin password, application secret, and database credentials before exposing the service publicly.
+</Warning>
+
+## Continue
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key-round" href="/api-reference/authentication">
+    Learn how research API keys are created and sent.
+  </Card>
+  <Card title="Consume SSE" icon="radio" href="/guides/consume-sse">
+    Parse streamed events from JavaScript or Python.
+  </Card>
+</CardGroup>

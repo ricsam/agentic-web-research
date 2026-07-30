@@ -1,0 +1,126 @@
+---
+title: "Helm"
+description: "Deploy agentic-web-research to Kubernetes"
+---
+
+The Helm chart can deploy the application with PostgreSQL and SearXNG, or connect to external instances.
+
+## Install from the chart directory
+
+```bash
+helm upgrade --install awr ./deploy/helm/agentic-web-research \
+  --namespace agentic-web-research \
+  --create-namespace \
+  --set image.repository=ghcr.io/your-org/agentic-web-research \
+  --set image.tag=latest \
+  --set env.publicBaseUrl=https://research.example.com \
+  --set env.adminEmail=admin@example.com \
+  --set env.adminPassword='replace-with-a-strong-password' \
+  --set env.appSecret='replace-with-a-long-random-secret'
+```
+
+<Warning>
+  Command-line secret values can be stored in shell history and the Helm release. For production, use your organization's secret-management workflow and restrict access to Helm release data.
+</Warning>
+
+## Configure ingress
+
+Create a values file:
+
+```yaml
+image:
+  repository: ghcr.io/your-org/agentic-web-research
+  tag: latest
+
+imagePullSecrets:
+  - name: ghcr-credentials
+
+env:
+  publicBaseUrl: https://research.example.com
+  adminEmail: admin@example.com
+  adminPassword: replace-with-a-strong-password
+  appSecret: replace-with-a-long-random-secret
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: research.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+```
+
+Install it:
+
+```bash
+helm upgrade --install awr ./deploy/helm/agentic-web-research \
+  --namespace agentic-web-research \
+  --create-namespace \
+  --values values.production.yaml
+```
+
+## Persistence
+
+Bundled PostgreSQL is enabled by default and requests a 10 GiB volume.
+
+```yaml
+postgres:
+  enabled: true
+  storageSize: 10Gi
+  storageClassName: rook-ceph-block
+```
+
+Set `postgres.storageClassName` to a `ReadWriteOnce` storage class available in your cluster.
+
+## External PostgreSQL
+
+```yaml
+postgres:
+  enabled: false
+  externalDatabaseUrl: postgres://user:password@postgres.example.com:5432/agentic_web_research
+```
+
+## External SearXNG
+
+```yaml
+searxng:
+  enabled: false
+  externalUrl: https://search.example.com
+```
+
+The SearXNG endpoint must allow JSON responses from `/search?format=json`.
+
+## Demo limits
+
+```yaml
+demo:
+  enabled: false
+  rateLimitWindowMs: 600000
+  rateLimitMax: 5
+  maxConcurrency: 2
+  maxDepth: 2
+  maxPages: 4
+  pageTimeoutMs: 15000
+  timeoutMs: 120000
+```
+
+Disable the public demo unless you intend to offer unauthenticated research from your deployment.
+
+## Verify
+
+```bash
+kubectl rollout status deployment/agentic-web-research \
+  --namespace agentic-web-research
+
+kubectl get pods,services,ingress \
+  --namespace agentic-web-research
+```
+
+Then check the public health endpoint:
+
+```bash
+curl https://research.example.com/healthz
+```
+
+After deployment, sign in at `/admin`, configure a model provider, and create a research API key.

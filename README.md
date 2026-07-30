@@ -56,9 +56,22 @@ All authenticated endpoints reject private, loopback, link-local, cluster-intern
 
 For unattended deployments, `BOOTSTRAP_API_KEY` and the `BOOTSTRAP_LLM_*` environment variables idempotently configure the service on startup.
 
+## Mintlify Docs
+
+The Mintlify documentation project lives in `docs/`. It includes a quickstart, deployment guides, SSE event reference, and OpenAPI-generated endpoint pages.
+
+Preview and validate it from the repository root:
+
+```bash
+bun run docs:dev
+bun run docs:validate
+```
+
+To publish, connect this repository in Mintlify and set the documentation directory to `docs`. After assigning an application domain, update the OpenAPI server URL in `docs/openapi.json` and any production URLs used in examples.
+
 ## Website, Demo, and LLM Docs
 
-The built app serves a public landing page at `/` with documentation, Helm install instructions, and a rate-limited live demo. Plain-text documentation for LLMs and agent clients is served at `/llms.txt`. The demo posts to `/v1/demo/research` and uses the same SSE event stream as the authenticated API, but with small server-side limits.
+The built app serves a public landing page at `/` with an API overview, Helm install instructions, and a rate-limited live demo. Plain-text documentation for LLMs and agent clients is served at `/llms.txt`. The demo posts to `/v1/demo/research` and uses the same SSE event stream as the authenticated API, but with small server-side limits.
 
 Demo controls are configured with:
 

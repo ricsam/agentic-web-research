@@ -1,0 +1,101 @@
+---
+title: "API overview"
+description: "Request cited web research and follow progress as a stream"
+---
+
+The public API exposes an authenticated research endpoint and a limited demo endpoint. Both return typed Server-Sent Events rather than one JSON response.
+
+## Base URL
+
+Use the URL where you deployed the service:
+
+```text
+https://research.example.com
+```
+
+The production endpoint is:
+
+```http
+POST /v1/research
+```
+
+## Request
+
+```bash
+curl -N https://research.example.com/v1/research \
+  -H "Authorization: Bearer awr_..." \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "query": "Compare agentic web research with classic RAG",
+    "maxConcurrency": 2,
+    "maxDepth": 2,
+    "maxPages": 4,
+    "timeoutMs": 120000
+  }'
+```
+
+| Field | Type | Required | Constraints | Description |
+| --- | --- | --- | --- | --- |
+| `query` | string | Yes | 1–2,000 characters | Research question or task |
+| `maxConcurrency` | integer | No | 1–8 | Concurrent page renders |
+| `maxDepth` | integer | No | 1–8 | Maximum link-navigation depth |
+| `maxPages` | integer | No | 1–32 | Maximum rendered pages |
+| `timeoutMs` | integer | No | 5,000–300,000 | Overall research timeout in milliseconds |
+
+Omitted limits use defaults configured in the admin console.
+
+## Response
+
+A successful request returns `200 OK` with `Content-Type: text/event-stream`. Each data object has this envelope:
+
+```json
+{
+  "type": "search_started",
+  "taskId": "38c7e431-bdf4-4682-9b1a-4be849748a4a",
+  "at": "2026-01-01T00:00:00.000Z",
+  "payload": {
+    "query": "Compare agentic web research with classic RAG"
+  }
+}
+```
+
+The stream ends after a `final` event on success. See [SSE events](/api-reference/events) for every event payload.
+
+## Demo endpoint
+
+```http
+POST /v1/demo/research
+```
+
+The demo endpoint:
+
+- does not require a research API key,
+- uses the same request and event shapes,
+- applies stricter server-side caps,
+- is rate limited by client IP,
+- may be disabled by an operator.
+
+Check availability and limits before using it:
+
+```bash
+curl https://research.example.com/v1/demo/config
+```
+
+<Warning>
+  Do not use the demo endpoint for production workloads. Use `/v1/research` with an API key.
+</Warning>
+
+## Errors before streaming
+
+Errors detected before SSE begins return JSON:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid request body or field constraints |
+| `401` | Missing, malformed, revoked, or invalid API key |
+| `404` | Demo endpoint is disabled |
+| `429` | Demo rate limit exceeded |
+| `500` | Unexpected server error |
+
+Errors after the stream begins arrive as `error` events.

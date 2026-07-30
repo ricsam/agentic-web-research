@@ -1,0 +1,129 @@
+---
+title: "Consume Server-Sent Events"
+description: "Parse research progress and final answers from the streaming API"
+---
+
+`POST /v1/research` returns a Server-Sent Events stream. Each frame has an event name and a JSON `data` payload.
+
+```text
+: connected
+
+event: search_started
+data: {"type":"search_started","taskId":"...","at":"...","payload":{"query":"..."}}
+
+event: final
+data: {"type":"final","taskId":"...","at":"...","payload":{"answer":"...","sources":[]}}
+```
+
+## Parsing rules
+
+1. Send `Accept: text/event-stream` and keep the connection open.
+2. Ignore comment lines beginning with `:`.
+3. Split frames on a blank line.
+4. Read the `event:` name and parse the `data:` value as JSON.
+5. Append `answer_delta.payload.text` for a live preview.
+6. Replace any preview with `final.payload.answer` when `final` arrives.
+7. Preserve `final.payload.sources` with the answer.
+8. Handle `error` events. Page-specific errors can be recoverable, while a stream that closes without `final` did not complete successfully.
+
+## JavaScript example
+
+Browsers' native `EventSource` API only issues `GET` requests, so use `fetch` for this `POST` endpoint.
+
+```javascript
+async function research(baseUrl, apiKey, query, onEvent) {
+  const response = await fetch(`${baseUrl}/v1/research`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream"
+    },
+    body: JSON.stringify({ query, maxPages: 4 })
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Research request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      const lines = frame.split("\n");
+      const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
+      const data = lines.find((line) => line.startsWith("data:"))?.slice(5).trim();
+      if (event && data) onEvent(event, JSON.parse(data));
+    }
+
+    if (done) break;
+  }
+}
+
+let answer = "";
+await research("https://research.example.com", process.env.AWR_API_KEY, "Compare RAG and web research", (event, message) => {
+  if (event === "answer_delta") answer += message.payload.text;
+  if (event === "final") {
+    answer = message.payload.answer;
+    console.log(answer, message.payload.sources);
+  }
+  if (event === "error") console.error(message.payload.message);
+});
+```
+
+## Python example
+
+```python
+import json
+import os
+import requests
+
+response = requests.post(
+    "https://research.example.com/v1/research",
+    headers={
+        "Authorization": f"Bearer {os.environ['AWR_API_KEY']}",
+        "Accept": "text/event-stream",
+    },
+    json={"query": "Compare RAG and web research", "maxPages": 4},
+    stream=True,
+    timeout=180,
+)
+response.raise_for_status()
+
+answer = ""
+event_name = None
+
+for raw_line in response.iter_lines(decode_unicode=True):
+    if raw_line.startswith("event:"):
+        event_name = raw_line.removeprefix("event:").strip()
+    elif raw_line.startswith("data:"):
+        message = json.loads(raw_line.removeprefix("data:").strip())
+        payload = message["payload"]
+
+        if event_name == "answer_delta":
+            answer += payload["text"]
+        elif event_name == "final":
+            answer = payload["answer"]
+            print(answer)
+            print(payload["sources"])
+        elif event_name == "error":
+            print("Research error:", payload.get("message"))
+```
+
+## Cancellation and timeouts
+
+Pass an `AbortSignal` to `fetch` when your client must cancel a request. The server also enforces the `timeoutMs` request value and configured research defaults. The accepted range is 5,000 to 300,000 milliseconds.
+
+<Info>
+  Use `POST /v1/demo/research` only for demos. It has the same stream contract but is unauthenticated, rate limited, and capped by server-side limits.
+</Info>
+
+See [SSE events](/api-reference/events) for all event payloads.

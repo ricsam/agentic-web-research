@@ -1,0 +1,172 @@
+---
+title: "SSE events"
+description: "Event names and payloads emitted during a research task"
+---
+
+Every research event is sent as a Server-Sent Events frame:
+
+```text
+event: search_started
+data: {"type":"search_started","taskId":"...","at":"...","payload":{"query":"..."}}
+```
+
+The parsed `data` value always includes:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `type` | string | Same value as the SSE event name |
+| `taskId` | UUID string | Identifier for this research task |
+| `at` | ISO 8601 string | Time the server emitted the event |
+| `payload` | object | Event-specific data |
+
+## Event sequence
+
+A typical successful task emits:
+
+```text
+search_started
+search_result (zero or more)
+agent_thought
+page_fetch_started
+page_fetch_finished
+answer_delta (zero or more)
+source
+final
+```
+
+The exact order varies because the model decides which tools to call. Consumers must key behavior on `type`, not array position.
+
+## `search_started`
+
+The initial web search has started.
+
+```json
+{
+  "query": "Compare agentic web research with classic RAG"
+}
+```
+
+## `search_result`
+
+One candidate returned by SearXNG.
+
+```json
+{
+  "title": "Example source",
+  "url": "https://example.com/article",
+  "snippet": "A short result excerpt",
+  "engine": "google",
+  "score": 1.2
+}
+```
+
+Only `title` and `url` are guaranteed.
+
+## `page_fetch_started`
+
+The model requested a page render.
+
+```json
+{
+  "url": "https://example.com/article",
+  "reason": "Primary documentation for the feature",
+  "depth": 1
+}
+```
+
+## `page_fetch_finished`
+
+A page was rendered and converted to Markdown.
+
+```json
+{
+  "url": "https://example.com/article",
+  "title": "Example source",
+  "markdownLength": 18250,
+  "links": 34
+}
+```
+
+`markdownLength` is the extracted character count. `links` is the number of discovered links.
+
+## `agent_thought`
+
+The model issued a tool call. This event contains structured tool intent, not hidden chain-of-thought.
+
+```json
+{
+  "tool": "view_page",
+  "args": {
+    "url": "https://example.com/article",
+    "reason": "Verify the release date"
+  }
+}
+```
+
+Known tools are `view_page` and `submit_research_result`.
+
+## `answer_delta`
+
+Incremental text produced by the model.
+
+```json
+{
+  "text": "The latest release adds..."
+}
+```
+
+Append `text` to display a live answer, but treat `final.payload.answer` as authoritative.
+
+## `source`
+
+The source list submitted by the model.
+
+```json
+{
+  "sources": [
+    {
+      "url": "https://example.com/article",
+      "title": "Example source",
+      "used": true
+    }
+  ]
+}
+```
+
+## `final`
+
+The task completed successfully. Stop reading after this event and persist its answer and sources.
+
+```json
+{
+  "answer": "A concise answer with evidence.",
+  "sources": [
+    {
+      "url": "https://example.com/article",
+      "title": "Example source",
+      "used": true
+    }
+  ],
+  "confidence": "high",
+  "notes": "Optional completion notes"
+}
+```
+
+`confidence` and `notes` are optional.
+
+## `error`
+
+A recoverable page error or terminal research error.
+
+```json
+{
+  "url": "https://example.com/unavailable",
+  "message": "HTTP fetch failed with 503"
+}
+```
+
+`url` is present for page-specific failures and may be omitted for terminal failures.
+
+<Warning>
+  Do not assume every `error` event is terminal. If the service can continue gathering evidence, later events may still include `final`. Consider the task failed if the connection closes without a `final` event.
+</Warning>

@@ -19,6 +19,8 @@
     "test": "bun test packages/core/src apps/server/src",
     "typecheck": "tsc -b",
     "helm:package": "mkdir -p deploy/helm/repo && helm package deploy/helm/agentic-web-research -d deploy/helm/repo && helm repo index deploy/helm/repo",
+    "docs:dev": "cd docs && PUPPETEER_SKIP_DOWNLOAD=true npx --yes mint@latest dev",
+    "docs:validate": "cd docs && PUPPETEER_SKIP_DOWNLOAD=true npx --yes mint@latest validate",
     "shadcn:init": "bunx --bun shadcn@latest init -t vite"
   },
   "devDependencies": {

@@ -1,0 +1,66 @@
+---
+title: "Authentication"
+description: "Create and use Bearer API keys for production research requests"
+---
+
+`POST /v1/research` requires a service-issued API key. Admin console sessions and research API keys are separate credentials.
+
+## Create an API key
+
+<Steps>
+  <Step title="Sign in as an administrator">
+    Open `<your-service-url>/admin` and authenticate with the bootstrapped admin account.
+  </Step>
+  <Step title="Open API keys">
+    Select the **API keys** tab and create a key with a descriptive name such as `production-agent`.
+  </Step>
+  <Step title="Copy the key">
+    Store the complete `awr_...` value immediately. The admin console only displays it once.
+  </Step>
+</Steps>
+
+## Send the key
+
+Use the HTTP Bearer scheme:
+
+```http
+Authorization: Bearer awr_...
+```
+
+```bash
+curl -N https://research.example.com/v1/research \
+  -H "Authorization: Bearer $AWR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is new in PostgreSQL?"}'
+```
+
+Missing or invalid credentials return:
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+```
+
+```json
+{
+  "error": "Invalid or missing API key"
+}
+```
+
+## Revoke a key
+
+In the admin console, delete or revoke the key from **API keys**. Subsequent requests with that key fail with `401 Unauthorized`.
+
+## Security guidance
+
+- Create a separate key for each application or environment.
+- Store keys in a secret manager or server-side environment variable.
+- Never commit keys to source control.
+- Never embed production keys in browser code or mobile application bundles.
+- Revoke unused or exposed keys immediately.
+- Monitor per-key activity in the admin console.
+- Rotate keys by creating a replacement, updating clients, and then revoking the old key.
+
+<Note>
+  The public demo endpoint does not use API-key authentication. It is controlled by rate limits and server-side research caps instead.
+</Note>

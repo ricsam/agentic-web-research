@@ -1,0 +1,95 @@
+---
+title: "Configure a model provider"
+description: "Connect an OpenAI-compatible model and choose the active provider"
+---
+
+Research needs one active OpenAI-compatible provider with credentials. Provider settings live in PostgreSQL and are managed from the admin console.
+
+## Create a provider
+
+<Steps>
+  <Step title="Open the admin console">
+    Visit `<your-service-url>/admin` and sign in with the account configured through `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+  </Step>
+
+  <Step title="Enter provider settings">
+    Open **Settings** and complete the **Create provider** form.
+
+    | Field | Description |
+    | --- | --- |
+    | Name | A label shown in the admin console and logs |
+    | Model | The model identifier accepted by the provider |
+    | Endpoint/Base URL | The provider's OpenAI-compatible base URL, usually ending in `/v1` |
+    | Max output tokens | Maximum model output for the research run; minimum `256` |
+    | Headers | Optional custom HTTP headers sent to the provider |
+  </Step>
+
+  <Step title="Add credentials">
+    Most providers accept one of these patterns:
+
+    <Tabs>
+      <Tab title="Authorization header">
+        Add a header named `Authorization` with this value:
+
+        ```text
+        Bearer your-provider-api-key
+        ```
+      </Tab>
+      <Tab title="API-key header">
+        Add the header required by your provider, such as:
+
+        ```text
+        x-api-key: your-provider-api-key
+        ```
+      </Tab>
+    </Tabs>
+
+    A provider API key is encrypted at rest. Secret-looking custom headers are redacted when the provider is loaded back into the form.
+  </Step>
+
+  <Step title="Activate the provider">
+    The first provider becomes active automatically. If multiple providers exist, click **Use** beside the provider that should handle new research tasks.
+  </Step>
+</Steps>
+
+## Common provider values
+
+<CodeGroup>
+```text OpenAI
+Name: OpenAI
+Endpoint: https://api.openai.com/v1
+Model: gpt-4.1-mini
+Header: Authorization: Bearer <OPENAI_API_KEY>
+```
+
+```text Local or hosted compatible API
+Name: My provider
+Endpoint: https://provider.example.com/v1
+Model: provider-model-id
+Header: Authorization: Bearer <PROVIDER_API_KEY>
+```
+</CodeGroup>
+
+<Note>
+  The endpoint must expose OpenAI-compatible chat completions behavior supported by the Vercel AI SDK. The model must support tool calls because the research loop uses tools to render pages and submit its result.
+</Note>
+
+## Edit credentials safely
+
+When you edit a provider, secret header values appear blank. Leave a secret value blank to preserve the stored value, or enter a replacement to rotate it.
+
+You cannot delete the active provider. Activate another provider first, then delete the old one.
+
+## Troubleshoot
+
+| Symptom | Action |
+| --- | --- |
+| `No active LLM provider is configured` | Create a provider or click **Use** on an existing provider |
+| `Active LLM provider is missing an API key or auth headers` | Add an API key or non-empty auth header |
+| Provider returns `401` or `403` | Check the header name, value, and provider base URL |
+| No tool calls are produced | Confirm that the selected model supports tool calling |
+| Health is degraded | Open the admin **Health** tab for the active provider message |
+
+<Warning>
+  Keep `APP_SECRET` stable. It encrypts provider API keys at rest. Rotating it without re-saving the provider credentials makes previously encrypted values unreadable.
+</Warning>

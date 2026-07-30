@@ -1,0 +1,7 @@
+<svg width="238" height="32" viewBox="0 0 238 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="8" fill="#14B8A6"/>
+  <circle cx="14" cy="14" r="6.25" stroke="#042F2E" stroke-width="2.5"/>
+  <path d="M18.5 18.5L24 24" stroke="#042F2E" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="14" cy="14" r="2" fill="#042F2E"/>
+  <text x="42" y="21" font-family="Inter, ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="15" font-weight="650" fill="#F8FAFC">agentic-web-research</text>
+</svg>
