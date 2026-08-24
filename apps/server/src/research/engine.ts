@@ -1,7 +1,14 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { hasToolCall, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import type { ResearchDefaults, ResearchFinalResult, ResearchRequest, SearchResult } from "@agentic-web-research/core";
+import type {
+  OpenAiCompatibleProvider,
+  RequestLlmConfig,
+  ResearchDefaults,
+  ResearchFinalResult,
+  ResearchRequest,
+  SearchResult,
+} from "@agentic-web-research/core";
 import type { AppConfig } from "../config";
 import type { Database } from "../db/database";
 import { hasProviderCredentials } from "../db/database";
@@ -18,6 +25,7 @@ export type ResearchRunInput = {
   db: Database;
   emit: SseEmitter;
   runtime: ResearchRuntime;
+  llmOverride?: RequestLlmConfig;
   signal?: AbortSignal;
 };
 
@@ -36,7 +44,7 @@ function mergeOptions(request: ResearchRequest, defaults: ResearchDefaults) {
     maxPages: request.maxPages ?? defaults.maxPages,
     timeoutMs: request.timeoutMs ?? defaults.timeoutMs,
     pageTimeoutMs: defaults.pageTimeoutMs,
-    allowPrivateNetworks: defaults.allowPrivateNetworks
+    allowPrivateNetworks: defaults.allowPrivateNetworks,
   };
 }
 
@@ -46,7 +54,7 @@ function formatSearchResults(results: SearchResult[]) {
       return [
         `${index + 1}. ${result.title}`,
         `URL: ${result.url}`,
-        result.snippet ? `Snippet: ${result.snippet}` : undefined
+        result.snippet ? `Snippet: ${result.snippet}` : undefined,
       ]
         .filter(Boolean)
         .join("\n");
@@ -56,21 +64,32 @@ function formatSearchResults(results: SearchResult[]) {
 
 function trimMarkdown(markdown: string) {
   const maxChars = 45000;
-  return markdown.length > maxChars ? `${markdown.slice(0, maxChars)}\n\n[Content truncated]` : markdown;
+  return markdown.length > maxChars
+    ? `${markdown.slice(0, maxChars)}\n\n[Content truncated]`
+    : markdown;
 }
 
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
-    throw signal.reason instanceof Error ? signal.reason : new Error("Research request aborted");
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error("Research request aborted");
   }
 }
 
-export async function readStreamPart<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<IteratorResult<T>> {
+export async function readStreamPart<T>(
+  iterator: AsyncIterator<T>,
+  signal: AbortSignal,
+): Promise<IteratorResult<T>> {
   throwIfAborted(signal);
   return await new Promise<IteratorResult<T>>((resolve, reject) => {
     const abort = () => {
       cleanup();
-      reject(signal.reason instanceof Error ? signal.reason : new Error("Research request aborted"));
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Research request aborted"),
+      );
     };
     const cleanup = () => signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", abort, { once: true });
@@ -82,7 +101,7 @@ export async function readStreamPart<T>(iterator: AsyncIterator<T>, signal: Abor
       (error) => {
         cleanup();
         reject(error);
-      }
+      },
     );
   });
 }
@@ -93,15 +112,18 @@ function normalizeSourceUrl(input: string) {
   return url.toString();
 }
 
-function mergeSearchResults(searchResults: SearchResult[], sourceUrls: string[]) {
+function mergeSearchResults(
+  searchResults: SearchResult[],
+  sourceUrls: string[],
+) {
   const seen = new Set<string>();
   return [
     ...sourceUrls.map((url) => ({
       title: url,
       url,
-      engine: "provided"
+      engine: "provided",
     })),
-    ...searchResults
+    ...searchResults,
   ].filter((result) => {
     let normalized: string;
     try {
@@ -118,22 +140,46 @@ function mergeSearchResults(searchResults: SearchResult[], sourceUrls: string[])
 
 export function filterRenderedSources(
   sources: ResearchFinalResult["sources"],
-  renderedSources: ReadonlyMap<string, { title?: string; used: boolean }>
+  renderedSources: ReadonlyMap<string, { title?: string; used: boolean }>,
 ) {
   return sources
     .map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }))
     .filter((source) => renderedSources.has(source.url));
 }
 
+export async function resolveLlmProvider(
+  db: Database,
+  llmOverride?: RequestLlmConfig,
+): Promise<{
+  provider: RequestLlmConfig | OpenAiCompatibleProvider;
+  source: "request" | "database";
+}> {
+  if (llmOverride) return { provider: llmOverride, source: "request" };
+
+  const activeProvider = await db.getActiveLlmProvider();
+  if (!activeProvider) {
+    throw new Error("No active LLM provider is configured");
+  }
+  if (!hasProviderCredentials(activeProvider)) {
+    throw new Error(
+      "Active LLM provider is missing an API key or auth headers",
+    );
+  }
+  return { provider: activeProvider, source: "database" };
+}
+
 export async function runResearch(input: ResearchRunInput) {
-  const { taskId, request, defaults, config, db, emit, runtime } = input;
+  const { taskId, request, defaults, config, db, emit, runtime, llmOverride } =
+    input;
   const options = mergeOptions(request, defaults);
   const deadlineSignal = AbortSignal.timeout(options.timeoutMs);
-  const signal = input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal;
+  const signal = input.signal
+    ? AbortSignal.any([input.signal, deadlineSignal])
+    : deadlineSignal;
   const stats: RunStats = {
     pagesRendered: 0,
     toolCalls: 0,
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
   };
   const deadline = Date.now() + options.timeoutMs;
 
@@ -141,7 +187,7 @@ export async function runResearch(input: ResearchRunInput) {
   await emit("search_started", { query: request.query });
   const searchResults = mergeSearchResults(
     await searchWeb(config.SEARXNG_URL, request.query, { signal }),
-    request.sourceUrls ?? []
+    request.sourceUrls ?? [],
   );
   stats.searchedAt = new Date().toISOString();
 
@@ -149,21 +195,21 @@ export async function runResearch(input: ResearchRunInput) {
     await emit("search_result", result);
   }
 
-  const activeProvider = await db.getActiveLlmProvider();
-  if (!activeProvider) {
-    throw new Error("No active LLM provider is configured");
-  }
-  if (!hasProviderCredentials(activeProvider)) {
-    throw new Error("Active LLM provider is missing an API key or auth headers");
-  }
+  const resolvedProvider = await resolveLlmProvider(db, llmOverride);
+  const llmProvider = resolvedProvider.provider;
 
-  await db.log("info", "Using active LLM provider", {
-    providerId: activeProvider.id,
-    providerName: activeProvider.name,
-    endpoint: activeProvider.endpoint,
-    model: activeProvider.model,
-    headerNames: Object.keys(activeProvider.headers)
-  });
+  if (resolvedProvider.source === "database") {
+    const activeProvider = llmProvider as OpenAiCompatibleProvider;
+    await db.log("info", "Using active LLM provider", {
+      providerId: activeProvider.id,
+      providerName: activeProvider.name,
+      endpoint: activeProvider.endpoint,
+      model: activeProvider.model,
+      headerNames: Object.keys(activeProvider.headers),
+    });
+  } else {
+    await db.log("info", "Using request-scoped LLM provider");
+  }
 
   const renderer = runtime.renderer;
   const semaphore = new Semaphore(options.maxConcurrency);
@@ -178,20 +224,23 @@ export async function runResearch(input: ResearchRunInput) {
 
   const runAgent = async () => {
     const provider = createOpenAICompatible({
-      name: activeProvider.name || "admin-configured",
-      apiKey: activeProvider.apiKey,
-      baseURL: activeProvider.endpoint,
-      headers: activeProvider.headers
+      name:
+        resolvedProvider.source === "database"
+          ? (llmProvider as OpenAiCompatibleProvider).name || "admin-configured"
+          : "request-scoped",
+      apiKey: llmProvider.apiKey,
+      baseURL: llmProvider.endpoint,
+      headers: llmProvider.headers,
     });
 
     const result = streamText({
-      model: provider(activeProvider.model),
-      temperature: activeProvider.temperature,
-      maxOutputTokens: activeProvider.maxOutputTokens,
+      model: provider(llmProvider.model),
+      temperature: llmProvider.temperature,
+      maxOutputTokens: llmProvider.maxOutputTokens,
       abortSignal: signal,
       stopWhen: [
         hasToolCall("submit_research_result"),
-        stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16))
+        stepCountIs(Math.min(options.maxPages + options.maxDepth + 4, 16)),
       ],
       system:
         "You are a focused web research agent. Use the provided search results and page-viewing tool to gather enough evidence. " +
@@ -202,7 +251,9 @@ export async function runResearch(input: ResearchRunInput) {
         `Limits: max ${options.maxPages} rendered pages, max navigation depth ${options.maxDepth}, max ${options.maxConcurrency} concurrent page renders.`,
         "",
         "Initial search results:",
-        searchResults.length ? formatSearchResults(searchResults) : "No search results were returned."
+        searchResults.length
+          ? formatSearchResults(searchResults)
+          : "No search results were returned.",
       ].join("\n"),
       tools: {
         view_page: tool({
@@ -211,7 +262,7 @@ export async function runResearch(input: ResearchRunInput) {
           inputSchema: z.object({
             url: z.string().url(),
             reason: z.string().min(1).max(500),
-            sourceUrl: z.string().url().optional()
+            sourceUrl: z.string().url().optional(),
           }),
           execute: async ({ url, reason, sourceUrl }) => {
             throwIfAborted(signal);
@@ -222,10 +273,12 @@ export async function runResearch(input: ResearchRunInput) {
               return { error: `Page limit reached (${options.maxPages})` };
             }
 
-            const sourceDepth = sourceUrl ? depths.get(sourceUrl) ?? 1 : 0;
-            const depth = sourceUrl ? sourceDepth + 1 : depths.get(url) ?? 1;
+            const sourceDepth = sourceUrl ? (depths.get(sourceUrl) ?? 1) : 0;
+            const depth = sourceUrl ? sourceDepth + 1 : (depths.get(url) ?? 1);
             if (depth > options.maxDepth) {
-              return { error: `Navigation depth ${depth} exceeds maxDepth ${options.maxDepth}` };
+              return {
+                error: `Navigation depth ${depth} exceeds maxDepth ${options.maxDepth}`,
+              };
             }
 
             stats.toolCalls += 1;
@@ -240,21 +293,24 @@ export async function runResearch(input: ResearchRunInput) {
                       renderer.render(url, {
                         timeoutMs: options.pageTimeoutMs,
                         allowPrivateNetworks: options.allowPrivateNetworks,
-                        signal
+                        signal,
                       }),
-                    signal
+                    signal,
                   ),
-                signal
+                signal,
               );
               depths.set(rendered.finalUrl, depth);
               depths.set(url, depth);
-              renderedSources.set(normalizeSourceUrl(rendered.finalUrl), { title: rendered.title, used: true });
+              renderedSources.set(normalizeSourceUrl(rendered.finalUrl), {
+                title: rendered.title,
+                used: true,
+              });
 
               await emit("page_fetch_finished", {
                 url: rendered.finalUrl,
                 title: rendered.title,
                 markdownLength: rendered.markdown.length,
-                links: rendered.links.length
+                links: rendered.links.length,
               });
 
               return {
@@ -262,14 +318,15 @@ export async function runResearch(input: ResearchRunInput) {
                 title: rendered.title,
                 depth,
                 markdown: trimMarkdown(rendered.markdown),
-                links: rendered.links.slice(0, 30)
+                links: rendered.links.slice(0, 30),
               };
             } catch (error) {
-              const message = error instanceof Error ? error.message : "Unknown render error";
+              const message =
+                error instanceof Error ? error.message : "Unknown render error";
               await emit("error", { url, message });
               return { error: message };
             }
-          }
+          },
         }),
         submit_research_result: tool({
           description: "Submit the final research answer and stop researching.",
@@ -279,29 +336,39 @@ export async function runResearch(input: ResearchRunInput) {
               z.object({
                 url: z.string().url(),
                 title: z.string().optional(),
-                used: z.boolean().default(true)
-              })
+                used: z.boolean().default(true),
+              }),
             ),
             confidence: z.enum(["low", "medium", "high"]).optional(),
-            notes: z.string().optional()
+            notes: z.string().optional(),
           }),
           execute: async (finalResult) => {
-            const sources = filterRenderedSources(finalResult.sources, renderedSources);
+            const sources = filterRenderedSources(
+              finalResult.sources,
+              renderedSources,
+            );
             submitted = { ...finalResult, sources };
             await emit("source", { sources });
             return { accepted: true };
-          }
-        })
-      }
+          },
+        }),
+      },
     });
 
-    const streamIterator = (result.fullStream as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
+    const streamIterator = (
+      result.fullStream as AsyncIterable<Record<string, unknown>>
+    )[Symbol.asyncIterator]();
     while (true) {
       const next = await readStreamPart(streamIterator, signal);
       if (next.done) break;
       const part = next.value;
       if (part.type === "text-delta") {
-        const text = typeof part.text === "string" ? part.text : typeof part.delta === "string" ? part.delta : "";
+        const text =
+          typeof part.text === "string"
+            ? part.text
+            : typeof part.delta === "string"
+              ? part.delta
+              : "";
         if (text) {
           accumulatedAnswer += text;
           await emit("answer_delta", { text });
@@ -311,28 +378,35 @@ export async function runResearch(input: ResearchRunInput) {
       if (part.type === "tool-call") {
         await emit("agent_thought", {
           tool: part.toolName,
-          args: part.input ?? part.args ?? {}
+          args: part.input ?? part.args ?? {},
         });
       }
 
       if (part.type === "error") {
-        const error = part.error instanceof Error ? part.error.message : String(part.error ?? "Unknown AI SDK error");
+        const error =
+          part.error instanceof Error
+            ? part.error.message
+            : String(part.error ?? "Unknown AI SDK error");
         throw new Error(error);
       }
     }
 
-    const fallbackSources = Array.from(renderedSources.entries()).map(([url, source]) => ({
-      url,
-      title: source.title,
-      used: source.used
-    }));
+    const fallbackSources = Array.from(renderedSources.entries()).map(
+      ([url, source]) => ({
+        url,
+        title: source.title,
+        used: source.used,
+      }),
+    );
     const finalResult: ResearchFinalResult =
       submitted ??
       ({
-        answer: accumulatedAnswer.trim() || "The agent did not produce a final answer.",
+        answer:
+          accumulatedAnswer.trim() ||
+          "The agent did not produce a final answer.",
         sources: fallbackSources,
         confidence: "low",
-        notes: "The model ended without calling submit_research_result."
+        notes: "The model ended without calling submit_research_result.",
       } satisfies ResearchFinalResult);
 
     stats.finishedAt = new Date().toISOString();

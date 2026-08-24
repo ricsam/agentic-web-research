@@ -91,6 +91,8 @@ spec:
               value: {{ .Values.bootstrapLlm.temperature | quote }}
             - name: BOOTSTRAP_LLM_MAX_OUTPUT_TOKENS
               value: {{ .Values.bootstrapLlm.maxOutputTokens | quote }}
+            - name: REQUEST_LLM_CONFIG_MODE
+              value: {{ .Values.requestLlmConfig.mode | quote }}
             - name: MAX_ACTIVE_RESEARCH_TASKS
               value: {{ .Values.capacity.maxActiveResearchTasks | quote }}
             - name: MAX_ACTIVE_PAGE_RENDERS

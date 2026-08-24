@@ -41,6 +41,10 @@ bootstrapLlm:
   temperature: 0.2
   maxOutputTokens: 4096
 
+# disabled, optional (use request headers when supplied), or required (no global provider needed)
+requestLlmConfig:
+  mode: optional
+
 capacity:
   maxActiveResearchTasks: 4
   maxActivePageRenders: 8

@@ -1,9 +1,12 @@
 import { z } from "zod";
 
-const HttpUrlSchema = z.string().url().refine((input) => {
-  const protocol = new URL(input).protocol;
-  return protocol === "http:" || protocol === "https:";
-}, "URL must use http or https");
+const HttpUrlSchema = z
+  .string()
+  .url()
+  .refine((input) => {
+    const protocol = new URL(input).protocol;
+    return protocol === "http:" || protocol === "https:";
+  }, "URL must use http or https");
 
 export const ResearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(2000),
@@ -11,20 +14,20 @@ export const ResearchRequestSchema = z.object({
   maxConcurrency: z.number().int().min(1).max(8).optional(),
   maxDepth: z.number().int().min(1).max(8).optional(),
   maxPages: z.number().int().min(1).max(32).optional(),
-  timeoutMs: z.number().int().min(5000).max(300000).optional()
+  timeoutMs: z.number().int().min(5000).max(300000).optional(),
 });
 
 export type ResearchRequest = z.infer<typeof ResearchRequestSchema>;
 
 export const WebSearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(1000),
-  limit: z.number().int().min(1).max(10).default(5)
+  limit: z.number().int().min(1).max(10).default(5),
 });
 
 export type WebSearchRequest = z.infer<typeof WebSearchRequestSchema>;
 
 export const WebReadRequestSchema = z.object({
-  url: HttpUrlSchema
+  url: HttpUrlSchema,
 });
 
 export type WebReadRequest = z.infer<typeof WebReadRequestSchema>;
@@ -35,7 +38,7 @@ export const ResearchDefaultsSchema = z.object({
   maxPages: z.number().int().min(1).max(32).default(8),
   timeoutMs: z.number().int().min(5000).max(300000).default(120000),
   pageTimeoutMs: z.number().int().min(3000).max(60000).default(20000),
-  allowPrivateNetworks: z.boolean().default(false)
+  allowPrivateNetworks: z.boolean().default(false),
 });
 
 export type ResearchDefaults = z.infer<typeof ResearchDefaultsSchema>;
@@ -51,7 +54,7 @@ const HeaderMapBaseSchema = z
         context.addIssue({
           code: "custom",
           path: [name],
-          message: "Header name cannot be empty"
+          message: "Header name cannot be empty",
         });
         continue;
       }
@@ -60,7 +63,7 @@ const HeaderMapBaseSchema = z
         context.addIssue({
           code: "custom",
           path: [name],
-          message: "Duplicate header name"
+          message: "Duplicate header name",
         });
         continue;
       }
@@ -69,28 +72,63 @@ const HeaderMapBaseSchema = z
     }
   })
   .transform((headers) => {
-    return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.trim(), value]));
+    return Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [name.trim(), value]),
+    );
   });
 
 export const HeaderMapSchema = HeaderMapBaseSchema.default({});
 
-const EndpointSchema = z.string().trim().url();
+const EndpointSchema = z
+  .string()
+  .trim()
+  .url()
+  .refine((input) => {
+    const protocol = new URL(input).protocol;
+    return protocol === "http:" || protocol === "https:";
+  }, "Endpoint must use http or https");
 const ProviderNameSchema = z.string().trim().min(1).max(120);
-const ProviderModelSchema = z.string().trim().min(1);
+const ProviderModelSchema = z.string().trim().min(1).max(500);
 const TemperatureSchema = z.number().min(0).max(2);
 const MaxOutputTokensSchema = z.number().int().min(256);
 const OptionalIsoDateSchema = z.string().datetime().optional();
+const ApiKeySchema = z.string().trim().min(1).max(16_384);
 
 export const LlmConfigSchema = z.object({
   endpoint: EndpointSchema.default("https://api.openai.com/v1"),
   model: ProviderModelSchema.default("gpt-4.1-mini"),
-  apiKey: z.string().optional(),
+  apiKey: ApiKeySchema.optional(),
   headers: HeaderMapSchema,
   temperature: TemperatureSchema.default(0.2),
-  maxOutputTokens: MaxOutputTokensSchema.default(4096)
+  maxOutputTokens: MaxOutputTokensSchema.default(4096),
 });
 
 export type LlmConfig = z.infer<typeof LlmConfigSchema>;
+
+export const RequestLlmConfigSchema = z
+  .object({
+    endpoint: EndpointSchema,
+    model: ProviderModelSchema,
+    apiKey: ApiKeySchema.optional(),
+    headers: HeaderMapSchema,
+    temperature: TemperatureSchema.default(0.2),
+    maxOutputTokens: MaxOutputTokensSchema.default(4096),
+  })
+  .superRefine((provider, context) => {
+    if (
+      provider.apiKey ||
+      Object.values(provider.headers).some((value) => value.trim())
+    )
+      return;
+    context.addIssue({
+      code: "custom",
+      path: ["apiKey"],
+      message:
+        "Request LLM config requires an API key or a non-empty custom header",
+    });
+  });
+
+export type RequestLlmConfig = z.infer<typeof RequestLlmConfigSchema>;
 
 export const OpenAiCompatibleProviderSchema = z.object({
   id: z.string().trim().min(1),
@@ -102,19 +140,24 @@ export const OpenAiCompatibleProviderSchema = z.object({
   temperature: TemperatureSchema.default(0.2),
   maxOutputTokens: MaxOutputTokensSchema.default(4096),
   createdAt: OptionalIsoDateSchema,
-  updatedAt: OptionalIsoDateSchema
+  updatedAt: OptionalIsoDateSchema,
 });
 
-export type OpenAiCompatibleProvider = z.infer<typeof OpenAiCompatibleProviderSchema>;
+export type OpenAiCompatibleProvider = z.infer<
+  typeof OpenAiCompatibleProviderSchema
+>;
 
 export const LlmSettingsSchema = z.object({
   activeProviderId: z.string().trim().min(1).optional(),
-  providers: z.array(OpenAiCompatibleProviderSchema).default([])
+  providers: z.array(OpenAiCompatibleProviderSchema).default([]),
 });
 
 export type LlmSettings = z.infer<typeof LlmSettingsSchema>;
 
-export type PublicOpenAiCompatibleProvider = Omit<OpenAiCompatibleProvider, "apiKey" | "temperature"> & {
+export type PublicOpenAiCompatibleProvider = Omit<
+  OpenAiCompatibleProvider,
+  "apiKey" | "temperature"
+> & {
   hasApiKey: boolean;
 };
 
@@ -130,10 +173,12 @@ export const OpenAiCompatibleProviderCreateSchema = z.object({
   apiKey: z.string().optional(),
   headers: HeaderMapSchema,
   temperature: TemperatureSchema.default(0.2),
-  maxOutputTokens: MaxOutputTokensSchema.default(4096)
+  maxOutputTokens: MaxOutputTokensSchema.default(4096),
 });
 
-export type OpenAiCompatibleProviderCreate = z.infer<typeof OpenAiCompatibleProviderCreateSchema>;
+export type OpenAiCompatibleProviderCreate = z.infer<
+  typeof OpenAiCompatibleProviderCreateSchema
+>;
 
 export const OpenAiCompatibleProviderUpdateSchema = z.object({
   name: ProviderNameSchema.optional(),
@@ -142,26 +187,28 @@ export const OpenAiCompatibleProviderUpdateSchema = z.object({
   apiKey: z.string().optional(),
   headers: HeaderMapBaseSchema.optional(),
   temperature: TemperatureSchema.optional(),
-  maxOutputTokens: MaxOutputTokensSchema.optional()
+  maxOutputTokens: MaxOutputTokensSchema.optional(),
 });
 
-export type OpenAiCompatibleProviderUpdate = z.infer<typeof OpenAiCompatibleProviderUpdateSchema>;
+export type OpenAiCompatibleProviderUpdate = z.infer<
+  typeof OpenAiCompatibleProviderUpdateSchema
+>;
 
 export const LlmActiveProviderSchema = z.object({
-  providerId: z.string().trim().min(1)
+  providerId: z.string().trim().min(1),
 });
 
 export type LlmActiveProvider = z.infer<typeof LlmActiveProviderSchema>;
 
 export const ApiKeyCreateSchema = z.object({
-  name: z.string().trim().min(1).max(120)
+  name: z.string().trim().min(1).max(120),
 });
 
 export type ApiKeyCreate = z.infer<typeof ApiKeyCreateSchema>;
 
 export const AdminLoginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
 });
 
 export type AdminLogin = z.infer<typeof AdminLoginSchema>;
@@ -175,7 +222,7 @@ export const researchEventTypes = [
   "answer_delta",
   "source",
   "final",
-  "error"
+  "error",
 ] as const;
 
 export type ResearchEventType = (typeof researchEventTypes)[number];

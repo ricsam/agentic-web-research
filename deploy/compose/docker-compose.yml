@@ -26,6 +26,7 @@ services:
       BOOTSTRAP_LLM_MODEL: ${BOOTSTRAP_LLM_MODEL:-}
       BOOTSTRAP_LLM_API_KEY: ${BOOTSTRAP_LLM_API_KEY:-}
       BOOTSTRAP_LLM_HEADERS_JSON: ${BOOTSTRAP_LLM_HEADERS_JSON:-{}}
+      REQUEST_LLM_CONFIG_MODE: ${REQUEST_LLM_CONFIG_MODE:-optional}
       MAX_ACTIVE_RESEARCH_TASKS: ${MAX_ACTIVE_RESEARCH_TASKS:-4}
       MAX_ACTIVE_PAGE_RENDERS: ${MAX_ACTIVE_PAGE_RENDERS:-8}
       DEMO_RESEARCH_ENABLED: ${DEMO_RESEARCH_ENABLED:-true}
@@ -50,7 +51,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agentic_web_research -d agentic_web_research"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U agentic_web_research -d agentic_web_research",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5

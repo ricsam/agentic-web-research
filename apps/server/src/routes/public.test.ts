@@ -7,9 +7,13 @@ import {
   createRequestAbortController,
   llmsTxt,
   registerResearchLease,
-  waitForResearchAbort
+  waitForResearchAbort,
 } from "./public";
 import type { AppConfig } from "../config";
+import {
+  parseRequestLlmConfig,
+  requestLlmHeaderNames,
+} from "../research/requestLlm";
 
 const config: AppConfig = {
   NODE_ENV: "test",
@@ -30,6 +34,7 @@ const config: AppConfig = {
   BOOTSTRAP_LLM_HEADERS_JSON: "{}",
   BOOTSTRAP_LLM_TEMPERATURE: 0.2,
   BOOTSTRAP_LLM_MAX_OUTPUT_TOKENS: 4096,
+  REQUEST_LLM_CONFIG_MODE: "optional",
   MAX_ACTIVE_RESEARCH_TASKS: 4,
   MAX_ACTIVE_PAGE_RENDERS: 8,
   CAPACITY_RETRY_AFTER_SECONDS: 10,
@@ -40,13 +45,88 @@ const config: AppConfig = {
   DEMO_RESEARCH_MAX_DEPTH: 2,
   DEMO_RESEARCH_MAX_PAGES: 4,
   DEMO_RESEARCH_PAGE_TIMEOUT_MS: 15000,
-  DEMO_RESEARCH_TIMEOUT_MS: 120000
+  DEMO_RESEARCH_TIMEOUT_MS: 120000,
 };
+
+describe("request-scoped LLM headers", () => {
+  test("parses a complete ephemeral override", () => {
+    const request = {
+      headers: {
+        [requestLlmHeaderNames.endpoint]: "https://models.example.com/v1",
+        [requestLlmHeaderNames.model]: "managed-model",
+        [requestLlmHeaderNames.apiKey]: "model-secret",
+        [requestLlmHeaderNames.headers]: JSON.stringify({
+          "X-Tenant": "tenant-1",
+        }),
+        [requestLlmHeaderNames.temperature]: "0.7",
+        [requestLlmHeaderNames.maxOutputTokens]: "8192",
+      },
+    } as never;
+
+    expect(parseRequestLlmConfig(request, "optional")).toEqual({
+      endpoint: "https://models.example.com/v1",
+      model: "managed-model",
+      apiKey: "model-secret",
+      headers: { "X-Tenant": "tenant-1" },
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+    });
+  });
+
+  test("falls back when optional headers are absent and rejects missing required config", () => {
+    const request = { headers: {} } as never;
+    expect(parseRequestLlmConfig(request, "optional")).toBeUndefined();
+    expect(() => parseRequestLlmConfig(request, "required")).toThrow(
+      "requires request-scoped",
+    );
+  });
+
+  test("rejects partial, invalid, and disabled overrides", () => {
+    expect(() =>
+      parseRequestLlmConfig(
+        {
+          headers: {
+            [requestLlmHeaderNames.model]: "managed-model",
+            [requestLlmHeaderNames.apiKey]: "model-secret",
+          },
+        } as never,
+        "optional",
+      ),
+    ).toThrow("Invalid request-scoped");
+    expect(() =>
+      parseRequestLlmConfig(
+        {
+          headers: {
+            [requestLlmHeaderNames.endpoint]: "https://models.example.com/v1",
+            [requestLlmHeaderNames.model]: "managed-model",
+            [requestLlmHeaderNames.headers]: JSON.stringify({
+              Host: "evil.example.com",
+            }),
+          },
+        } as never,
+        "optional",
+      ),
+    ).toThrow("is not allowed");
+    expect(() =>
+      parseRequestLlmConfig(
+        {
+          headers: {
+            [requestLlmHeaderNames.endpoint]: "https://models.example.com/v1",
+          },
+        } as never,
+        "disabled",
+      ),
+    ).toThrow("disabled");
+  });
+});
 
 describe("public demo research helpers", () => {
   test("stops waiting for unresolved research when the route is aborted", async () => {
     const controller = new AbortController();
-    const pending = waitForResearchAbort(new Promise(() => undefined), controller.signal);
+    const pending = waitForResearchAbort(
+      new Promise(() => undefined),
+      controller.signal,
+    );
 
     controller.abort(new Error("Research client lease expired"));
 
@@ -60,7 +140,9 @@ describe("public demo research helpers", () => {
     expect(cancelResearchLease("task-1", "key-2")).toBe("forbidden");
     expect(controller.signal.aborted).toBe(false);
     expect(cancelResearchLease("task-1", "key-1")).toBe("cancelled");
-    expect(controller.signal.reason).toEqual(new Error("Research task cancelled by client"));
+    expect(controller.signal.reason).toEqual(
+      new Error("Research task cancelled by client"),
+    );
 
     cleanup();
     expect(cancelResearchLease("task-1", "key-1")).toBe("missing");
@@ -74,7 +156,7 @@ describe("public demo research helpers", () => {
     Object.assign(replyRaw, { writableEnded: true });
     const controller = createRequestAbortController(
       { raw: requestRaw } as never,
-      { raw: replyRaw } as never
+      { raw: replyRaw } as never,
     );
 
     replyRaw.emit("close");
@@ -90,7 +172,7 @@ describe("public demo research helpers", () => {
     const replyRaw = new EventEmitter();
     const controller = createRequestAbortController(
       { raw: requestRaw } as never,
-      { raw: replyRaw } as never
+      { raw: replyRaw } as never,
     );
 
     socket.emit("close");
@@ -105,7 +187,7 @@ describe("public demo research helpers", () => {
     const replyRaw = new EventEmitter();
     const controller = createRequestAbortController(
       { raw: requestRaw } as never,
-      { raw: replyRaw } as never
+      { raw: replyRaw } as never,
     );
 
     controller.cleanup();
@@ -121,30 +203,35 @@ describe("public demo research helpers", () => {
       maxPages: 4,
       timeoutMs: 120000,
       pageTimeoutMs: 15000,
-      allowPrivateNetworks: false
+      allowPrivateNetworks: false,
     });
   });
 
   test("clamps request limits to demo caps", () => {
-    expect(clampDemoRequest({
-      query: "test",
-      maxConcurrency: 8,
-      maxDepth: 8,
-      maxPages: 32,
-      timeoutMs: 300000
-    }, config)).toEqual({
+    expect(
+      clampDemoRequest(
+        {
+          query: "test",
+          maxConcurrency: 8,
+          maxDepth: 8,
+          maxPages: 32,
+          timeoutMs: 300000,
+        },
+        config,
+      ),
+    ).toEqual({
       query: "test",
       maxConcurrency: 2,
       maxDepth: 2,
       maxPages: 4,
-      timeoutMs: 120000
+      timeoutMs: 120000,
     });
   });
 
   test("renders llms.txt docs with the configured public base URL", async () => {
     const docs = await llmsTxt(config, {
       headers: {},
-      ip: "127.0.0.1"
+      ip: "127.0.0.1",
     } as never);
 
     expect(docs).toContain("# agentic-web-research");
@@ -161,8 +248,8 @@ describe("public demo research helpers", () => {
       markdown: "x".repeat(40_001),
       links: Array.from({ length: 35 }, (_, index) => ({
         title: `Link ${index}`,
-        url: `https://example.com/${index}`
-      }))
+        url: `https://example.com/${index}`,
+      })),
     });
 
     expect(result.truncated).toBe(true);

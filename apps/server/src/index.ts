@@ -14,12 +14,24 @@ import { registerPublicRoutes } from "./routes/public";
 import { bootstrapServiceConfiguration } from "./bootstrap";
 import { createResearchRuntime } from "./research/runtime";
 import { UnsafeUrlError } from "./research/urlSafety";
+import {
+  RequestLlmConfigError,
+  requestLlmHeaderNames,
+} from "./research/requestLlm";
 
 const config = loadConfig();
 const app = Fastify({
   logger: {
-    level: config.NODE_ENV === "development" ? "debug" : "info"
-  }
+    level: config.NODE_ENV === "development" ? "debug" : "info",
+    redact: {
+      paths: [
+        "req.headers.authorization",
+        `req.headers.${requestLlmHeaderNames.apiKey}`,
+        `req.headers.${requestLlmHeaderNames.headers}`,
+      ],
+      censor: "[Redacted]",
+    },
+  },
 });
 const db = new Database(config);
 
@@ -33,7 +45,7 @@ async function initDatabaseWithRetry(maxAttempts = 30) {
       const delayMs = Math.min(1000 * attempt, 5000);
       app.log.warn(
         { err: error, attempt, maxAttempts, delayMs },
-        "Database initialization failed; retrying"
+        "Database initialization failed; retrying",
       );
       await setTimeout(delayMs);
     }
@@ -42,13 +54,25 @@ async function initDatabaseWithRetry(maxAttempts = 30) {
 
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
-    return reply.code(400).send({ error: "Validation failed", issues: error.issues });
+    return reply
+      .code(400)
+      .send({ error: "Validation failed", issues: error.issues });
   }
   if (error instanceof UnsafeUrlError) {
     return reply.code(400).send({ error: error.message });
   }
-  if (error && typeof error === "object" && "code" in error && error.code === "FST_ERR_CTP_EMPTY_JSON_BODY") {
-    return reply.code(400).send({ error: "Request body must be omitted or contain valid JSON" });
+  if (error instanceof RequestLlmConfigError) {
+    return reply.code(error.statusCode).send({ error: error.message });
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "FST_ERR_CTP_EMPTY_JSON_BODY"
+  ) {
+    return reply
+      .code(400)
+      .send({ error: "Request body must be omitted or contain valid JSON" });
   }
   app.log.error(error);
   return reply.code(500).send({ error: "Internal server error" });
@@ -56,7 +80,7 @@ app.setErrorHandler((error, _request, reply) => {
 
 await app.register(cors, {
   origin: true,
-  credentials: true
+  credentials: true,
 });
 await app.register(cookie);
 
@@ -81,18 +105,23 @@ if (existsSync(chartRepoDir)) {
         response.setHeader("Content-Type", "application/x-yaml; charset=utf-8");
         response.setHeader("Cache-Control", "no-cache");
       }
-    }
+    },
   });
 }
 
 if (existsSync(adminDist)) {
   await app.register(staticPlugin, {
     root: adminDist,
-    prefix: "/"
+    prefix: "/",
   });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.method === "GET" && !request.url.startsWith("/v1/") && !request.url.startsWith("/admin/api/") && !request.url.startsWith("/charts/")) {
+    if (
+      request.method === "GET" &&
+      !request.url.startsWith("/v1/") &&
+      !request.url.startsWith("/admin/api/") &&
+      !request.url.startsWith("/charts/")
+    ) {
       return reply.sendFile("index.html", { maxAge: 0, immutable: false });
     }
     return reply.code(404).send({ error: "Not found" });

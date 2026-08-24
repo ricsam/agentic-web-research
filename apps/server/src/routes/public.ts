@@ -4,15 +4,17 @@ import {
   ResearchRequestSchema,
   WebReadRequestSchema,
   WebSearchRequestSchema,
+  type RequestLlmConfig,
   type ResearchDefaults,
   type ResearchRequest,
-  type WebReadResult
+  type WebReadResult,
 } from "@agentic-web-research/core";
 import type { AppConfig } from "../config";
 import type { Database } from "../db/database";
 import { hasProviderCredentials } from "../db/database";
 import { verifyApiKey } from "../auth/keys";
 import { runResearch } from "../research/engine";
+import { parseRequestLlmConfig } from "../research/requestLlm";
 import { WebRenderer } from "../research/renderer";
 import type { ResearchRuntime } from "../research/runtime";
 import { searchWeb } from "../research/search";
@@ -32,17 +34,23 @@ type ActiveResearchLease = {
 
 const activeResearchLeases = new Map<string, ActiveResearchLease>();
 
-export function registerResearchLease(taskId: string, apiKeyId: string | null, controller: AbortController) {
+export function registerResearchLease(
+  taskId: string,
+  apiKeyId: string | null,
+  controller: AbortController,
+) {
   const lease: ActiveResearchLease = {
     apiKeyId,
     controller,
     lastHeartbeatAt: Date.now(),
     timer: setInterval(() => {
-      if (Date.now() - lease.lastHeartbeatAt <= RESEARCH_LEASE_TIMEOUT_MS) return;
+      if (Date.now() - lease.lastHeartbeatAt <= RESEARCH_LEASE_TIMEOUT_MS)
+        return;
       activeResearchLeases.delete(taskId);
       clearInterval(lease.timer);
-      if (!controller.signal.aborted) controller.abort(new Error("Research client lease expired"));
-    }, 1_000)
+      if (!controller.signal.aborted)
+        controller.abort(new Error("Research client lease expired"));
+    }, 1_000),
   };
   lease.timer.unref();
   activeResearchLeases.set(taskId, lease);
@@ -71,14 +79,23 @@ export function cancelResearchLease(taskId: string, apiKeyId: string) {
   return "cancelled" as const;
 }
 
-export async function waitForResearchAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+export async function waitForResearchAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
   if (signal.aborted) {
-    throw signal.reason instanceof Error ? signal.reason : new Error("Research request aborted");
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error("Research request aborted");
   }
   return await new Promise<T>((resolve, reject) => {
     const abort = () => {
       cleanup();
-      reject(signal.reason instanceof Error ? signal.reason : new Error("Research request aborted"));
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Research request aborted"),
+      );
     };
     const cleanup = () => signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", abort, { once: true });
@@ -90,7 +107,7 @@ export async function waitForResearchAbort<T>(work: Promise<T>, signal: AbortSig
       (error) => {
         cleanup();
         reject(error);
-      }
+      },
     );
   });
 }
@@ -102,22 +119,39 @@ export function demoDefaults(config: AppConfig): ResearchDefaults {
     maxPages: config.DEMO_RESEARCH_MAX_PAGES,
     timeoutMs: config.DEMO_RESEARCH_TIMEOUT_MS,
     pageTimeoutMs: config.DEMO_RESEARCH_PAGE_TIMEOUT_MS,
-    allowPrivateNetworks: false
+    allowPrivateNetworks: false,
   };
 }
 
-export function clampDemoRequest(request: ResearchRequest, config: AppConfig): ResearchRequest {
+export function clampDemoRequest(
+  request: ResearchRequest,
+  config: AppConfig,
+): ResearchRequest {
   return {
     query: request.query,
     ...(request.sourceUrls ? { sourceUrls: request.sourceUrls } : {}),
-    maxConcurrency: Math.min(request.maxConcurrency ?? config.DEMO_RESEARCH_MAX_CONCURRENCY, config.DEMO_RESEARCH_MAX_CONCURRENCY),
-    maxDepth: Math.min(request.maxDepth ?? config.DEMO_RESEARCH_MAX_DEPTH, config.DEMO_RESEARCH_MAX_DEPTH),
-    maxPages: Math.min(request.maxPages ?? config.DEMO_RESEARCH_MAX_PAGES, config.DEMO_RESEARCH_MAX_PAGES),
-    timeoutMs: Math.min(request.timeoutMs ?? config.DEMO_RESEARCH_TIMEOUT_MS, config.DEMO_RESEARCH_TIMEOUT_MS)
+    maxConcurrency: Math.min(
+      request.maxConcurrency ?? config.DEMO_RESEARCH_MAX_CONCURRENCY,
+      config.DEMO_RESEARCH_MAX_CONCURRENCY,
+    ),
+    maxDepth: Math.min(
+      request.maxDepth ?? config.DEMO_RESEARCH_MAX_DEPTH,
+      config.DEMO_RESEARCH_MAX_DEPTH,
+    ),
+    maxPages: Math.min(
+      request.maxPages ?? config.DEMO_RESEARCH_MAX_PAGES,
+      config.DEMO_RESEARCH_MAX_PAGES,
+    ),
+    timeoutMs: Math.min(
+      request.timeoutMs ?? config.DEMO_RESEARCH_TIMEOUT_MS,
+      config.DEMO_RESEARCH_TIMEOUT_MS,
+    ),
   };
 }
 
-export function formatWebReadResult(rendered: Awaited<ReturnType<WebRenderer["render"]>>): WebReadResult {
+export function formatWebReadResult(
+  rendered: Awaited<ReturnType<WebRenderer["render"]>>,
+): WebReadResult {
   const truncated = rendered.markdown.length > MAX_READ_MARKDOWN_CHARS;
   return {
     url: rendered.url,
@@ -127,7 +161,7 @@ export function formatWebReadResult(rendered: Awaited<ReturnType<WebRenderer["re
       ? `${rendered.markdown.slice(0, MAX_READ_MARKDOWN_CHARS)}\n\n[Content truncated]`
       : rendered.markdown,
     links: rendered.links.slice(0, MAX_READ_LINKS),
-    truncated
+    truncated,
   };
 }
 
@@ -137,18 +171,27 @@ function clientIdentity(request: FastifyRequest) {
 
 function publicBaseUrl(config: AppConfig, request: FastifyRequest) {
   if (config.PUBLIC_BASE_URL) return config.PUBLIC_BASE_URL.replace(/\/$/, "");
-  const protocol = request.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() || "http";
+  const protocol =
+    request.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() ||
+    "http";
   const host = request.headers.host || `localhost:${config.PORT}`;
   return `${protocol}://${host}`;
 }
 
-export function createRequestAbortController(request: FastifyRequest, reply: FastifyReply, heartbeat = false) {
-  const controller = new AbortController() as AbortController & { cleanup: () => void };
+export function createRequestAbortController(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  heartbeat = false,
+) {
+  const controller = new AbortController() as AbortController & {
+    cleanup: () => void;
+  };
   const socket = request.raw.socket;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   const abort = () => {
     cleanup();
-    if (!controller.signal.aborted) controller.abort(new Error("Client disconnected"));
+    if (!controller.signal.aborted)
+      controller.abort(new Error("Client disconnected"));
   };
   const cleanup = () => {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
@@ -166,7 +209,12 @@ export function createRequestAbortController(request: FastifyRequest, reply: Fas
   socket.once("error", abort);
   if (heartbeat) {
     heartbeatTimer = setInterval(() => {
-      if (reply.raw.destroyed || reply.raw.writableEnded || socket.destroyed || !socket.writable) {
+      if (
+        reply.raw.destroyed ||
+        reply.raw.writableEnded ||
+        socket.destroyed ||
+        !socket.writable
+      ) {
         abort();
         return;
       }
@@ -182,13 +230,17 @@ export function createRequestAbortController(request: FastifyRequest, reply: Fas
 }
 
 function sendCapacityError(reply: FastifyReply, runtime: ResearchRuntime) {
-  return reply
-    .code(429)
-    .header("Retry-After", runtime.retryAfterSeconds)
-    .send({ error: "Research service is at capacity", retryAfterSeconds: runtime.retryAfterSeconds });
+  return reply.code(429).header("Retry-After", runtime.retryAfterSeconds).send({
+    error: "Research service is at capacity",
+    retryAfterSeconds: runtime.retryAfterSeconds,
+  });
 }
 
-async function requireApiKey(request: FastifyRequest, reply: FastifyReply, db: Database) {
+async function requireApiKey(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  db: Database,
+) {
   const apiKey = await verifyApiKey(db, request.headers.authorization);
   if (!apiKey) {
     await reply.code(401).send({ error: "Invalid or missing API key" });
@@ -206,9 +258,21 @@ async function runResearchSse(input: {
   body: ResearchRequest;
   defaults: ResearchDefaults;
   apiKeyId: string | null;
+  llmOverride?: RequestLlmConfig;
   requestMetadata?: Record<string, unknown>;
 }) {
-  const { request, reply, db, config, runtime, body, defaults, apiKeyId, requestMetadata } = input;
+  const {
+    request,
+    reply,
+    db,
+    config,
+    runtime,
+    body,
+    defaults,
+    apiKeyId,
+    llmOverride,
+    requestMetadata,
+  } = input;
   if (!runtime.researchTasks.tryAcquire()) {
     return sendCapacityError(reply, runtime);
   }
@@ -217,12 +281,15 @@ async function runResearchSse(input: {
   const taskId = await db.insertTask({
     apiKeyId,
     query: body.query,
-    request: requestMetadata ? { ...body, ...requestMetadata } : body
+    request: requestMetadata ? { ...body, ...requestMetadata } : body,
   });
-  const cleanupLease = request.headers["x-research-lease"] === "required"
-    ? registerResearchLease(taskId, apiKeyId, controller)
-    : undefined;
-  const deadlineSignal = AbortSignal.timeout(body.timeoutMs ?? defaults.timeoutMs);
+  const cleanupLease =
+    request.headers["x-research-lease"] === "required"
+      ? registerResearchLease(taskId, apiKeyId, controller)
+      : undefined;
+  const deadlineSignal = AbortSignal.timeout(
+    body.timeoutMs ?? defaults.timeoutMs,
+  );
   const researchSignal = AbortSignal.any([controller.signal, deadlineSignal]);
   prepareSse(reply);
   const emit = createSseEmitter(db, reply, taskId);
@@ -237,12 +304,14 @@ async function runResearchSse(input: {
         db,
         emit,
         runtime,
-        signal: researchSignal
+        llmOverride,
+        signal: researchSignal,
       }),
-      researchSignal
+      researchSignal,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown research error";
+    const message =
+      error instanceof Error ? error.message : "Unknown research error";
     await db.failTask(taskId, message);
     if (!controller.signal.aborted) {
       await emit("error", { message });
@@ -258,7 +327,10 @@ async function runResearchSse(input: {
 }
 
 export async function llmsTxt(config: AppConfig, request: FastifyRequest) {
-  const template = await readFile(new URL("../../../../llms.txt", import.meta.url), "utf8");
+  const template = await readFile(
+    new URL("../../../../llms.txt", import.meta.url),
+    "utf8",
+  );
   return template.replaceAll("<website>", publicBaseUrl(config, request));
 }
 
@@ -266,13 +338,17 @@ export async function registerPublicRoutes(
   app: FastifyInstance,
   db: Database,
   config: AppConfig,
-  runtime: ResearchRuntime
+  runtime: ResearchRuntime,
 ) {
   const demoLimiter = new FixedWindowRateLimiter({
     max: config.DEMO_RESEARCH_RATE_LIMIT_MAX,
-    windowMs: config.DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS
+    windowMs: config.DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS,
   });
-  let readinessCache: { checkedAt: number; body: Record<string, unknown>; status: number } | null = null;
+  let readinessCache: {
+    checkedAt: number;
+    body: Record<string, unknown>;
+    status: number;
+  } | null = null;
 
   app.get("/healthz", async () => ({ ok: true }));
 
@@ -286,20 +362,43 @@ export async function registerPublicRoutes(
       await db.query("SELECT 1");
       checks.database = { ok: true };
     } catch (error) {
-      checks.database = { ok: false, message: error instanceof Error ? error.message : String(error) };
+      checks.database = {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
 
     try {
-      const response = await fetch(config.SEARXNG_URL, { signal: AbortSignal.timeout(3_000) });
-      checks.searxng = response.ok ? { ok: true } : { ok: false, message: `HTTP ${response.status}` };
+      const response = await fetch(config.SEARXNG_URL, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      checks.searxng = response.ok
+        ? { ok: true }
+        : { ok: false, message: `HTTP ${response.status}` };
     } catch (error) {
-      checks.searxng = { ok: false, message: error instanceof Error ? error.message : String(error) };
+      checks.searxng = {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
 
-    const provider = await db.getActiveLlmProvider();
-    checks.llm = provider && hasProviderCredentials(provider)
-      ? { ok: true }
-      : { ok: false, message: provider ? "Active provider has no credentials" : "No active provider configured" };
+    if (config.REQUEST_LLM_CONFIG_MODE === "required") {
+      checks.llm = {
+        ok: true,
+        message: "Request-scoped LLM configuration is required",
+      };
+    } else {
+      const provider = await db.getActiveLlmProvider();
+      checks.llm =
+        provider && hasProviderCredentials(provider)
+          ? { ok: true }
+          : {
+              ok: false,
+              message: provider
+                ? "Active provider has no credentials"
+                : "No active provider configured",
+            };
+    }
 
     const ok = Object.values(checks).every((check) => check.ok);
     const body = { ok, checks };
@@ -323,7 +422,7 @@ export async function registerPublicRoutes(
     try {
       const results = await searchWeb(config.SEARXNG_URL, body.query, {
         limit: body.limit,
-        signal: controller.signal
+        signal: controller.signal,
       });
       return { query: body.query, results };
     } finally {
@@ -341,7 +440,7 @@ export async function registerPublicRoutes(
         const rendered = await runtime.renderer.render(body.url, {
           timeoutMs: defaults.pageTimeoutMs,
           allowPrivateNetworks: false,
-          signal: controller.signal
+          signal: controller.signal,
         });
         return formatWebReadResult(rendered);
       });
@@ -356,15 +455,19 @@ export async function registerPublicRoutes(
     enabled: config.DEMO_RESEARCH_ENABLED,
     rateLimit: {
       max: config.DEMO_RESEARCH_RATE_LIMIT_MAX,
-      windowMs: config.DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS
+      windowMs: config.DEMO_RESEARCH_RATE_LIMIT_WINDOW_MS,
     },
-    defaults: demoDefaults(config)
+    defaults: demoDefaults(config),
   }));
 
   app.post("/v1/research", async (request, reply) => {
     const apiKey = await requireApiKey(request, reply, db);
     if (!apiKey) return reply;
     const body = ResearchRequestSchema.parse(request.body);
+    const llmOverride = parseRequestLlmConfig(
+      request,
+      config.REQUEST_LLM_CONFIG_MODE,
+    );
     return runResearchSse({
       request,
       reply,
@@ -373,7 +476,8 @@ export async function registerPublicRoutes(
       runtime,
       body,
       defaults: await db.getResearchDefaults(),
-      apiKeyId: apiKey.id
+      apiKeyId: apiKey.id,
+      llmOverride,
     });
   });
 
@@ -381,10 +485,15 @@ export async function registerPublicRoutes(
     const apiKey = await requireApiKey(request, reply, db);
     if (!apiKey) return reply;
     const taskId = (request.params as { taskId?: unknown }).taskId;
-    if (typeof taskId !== "string" || !taskId) return reply.code(400).send({ error: "Invalid task ID" });
+    if (typeof taskId !== "string" || !taskId)
+      return reply.code(400).send({ error: "Invalid task ID" });
     const result = renewResearchLease(taskId, apiKey.id);
-    if (result === "missing") return reply.code(404).send({ error: "Research task lease not found" });
-    if (result === "forbidden") return reply.code(403).send({ error: "Research task lease belongs to another API key" });
+    if (result === "missing")
+      return reply.code(404).send({ error: "Research task lease not found" });
+    if (result === "forbidden")
+      return reply
+        .code(403)
+        .send({ error: "Research task lease belongs to another API key" });
     return reply.code(204).send();
   });
 
@@ -392,10 +501,15 @@ export async function registerPublicRoutes(
     const apiKey = await requireApiKey(request, reply, db);
     if (!apiKey) return reply;
     const taskId = (request.params as { taskId?: unknown }).taskId;
-    if (typeof taskId !== "string" || !taskId) return reply.code(400).send({ error: "Invalid task ID" });
+    if (typeof taskId !== "string" || !taskId)
+      return reply.code(400).send({ error: "Invalid task ID" });
     const result = cancelResearchLease(taskId, apiKey.id);
-    if (result === "missing") return reply.code(404).send({ error: "Active research task not found" });
-    if (result === "forbidden") return reply.code(403).send({ error: "Research task belongs to another API key" });
+    if (result === "missing")
+      return reply.code(404).send({ error: "Active research task not found" });
+    if (result === "forbidden")
+      return reply
+        .code(403)
+        .send({ error: "Research task belongs to another API key" });
     return reply.code(202).send({ status: "cancelling" });
   });
 
@@ -411,11 +525,14 @@ export async function registerPublicRoutes(
     reply.raw.setHeader("X-RateLimit-Reset", rateLimit.resetAt.toISOString());
 
     if (!rateLimit.allowed) {
-      reply.raw.setHeader("Retry-After", Math.ceil(rateLimit.retryAfterMs / 1000));
+      reply.raw.setHeader(
+        "Retry-After",
+        Math.ceil(rateLimit.retryAfterMs / 1000),
+      );
       return reply.code(429).send({
         error: "Demo rate limit exceeded",
         retryAfterMs: rateLimit.retryAfterMs,
-        resetAt: rateLimit.resetAt.toISOString()
+        resetAt: rateLimit.resetAt.toISOString(),
       });
     }
 
@@ -429,7 +546,7 @@ export async function registerPublicRoutes(
       body: requestWithDemoLimits,
       defaults: demoDefaults(config),
       apiKeyId: null,
-      requestMetadata: { source: "public_demo" }
+      requestMetadata: { source: "public_demo" },
     });
   });
 }

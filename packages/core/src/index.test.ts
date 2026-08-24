@@ -4,10 +4,11 @@ import {
   LlmConfigSchema,
   LlmSettingsSchema,
   OpenAiCompatibleProviderSchema,
+  RequestLlmConfigSchema,
   ResearchDefaultsSchema,
   ResearchRequestSchema,
   WebReadRequestSchema,
-  WebSearchRequestSchema
+  WebSearchRequestSchema,
 } from "./index";
 
 describe("core schemas", () => {
@@ -15,36 +16,83 @@ describe("core schemas", () => {
     expect(ResearchDefaultsSchema.parse({})).toMatchObject({
       maxConcurrency: 2,
       maxDepth: 3,
-      maxPages: 8
+      maxPages: 8,
     });
   });
 
   test("validates research requests", () => {
     expect(ResearchRequestSchema.parse({ query: "test" }).query).toBe("test");
-    expect(ResearchRequestSchema.parse({
-      query: "test",
-      sourceUrls: ["https://example.com"]
-    }).sourceUrls).toEqual(["https://example.com"]);
+    expect(
+      ResearchRequestSchema.parse({
+        query: "test",
+        sourceUrls: ["https://example.com"],
+      }).sourceUrls,
+    ).toEqual(["https://example.com"]);
     expect(() => ResearchRequestSchema.parse({ query: "" })).toThrow();
-    expect(() => ResearchRequestSchema.parse({
-      query: "test",
-      sourceUrls: Array.from({ length: 9 }, (_, index) => `https://example.com/${index}`)
-    })).toThrow();
+    expect(() =>
+      ResearchRequestSchema.parse({
+        query: "test",
+        sourceUrls: Array.from(
+          { length: 9 },
+          (_, index) => `https://example.com/${index}`,
+        ),
+      }),
+    ).toThrow();
   });
 
   test("validates web search and read requests", () => {
     expect(WebSearchRequestSchema.parse({ query: "test" })).toEqual({
       query: "test",
-      limit: 5
+      limit: 5,
     });
-    expect(WebSearchRequestSchema.parse({ query: "test", limit: 10 }).limit).toBe(10);
-    expect(() => WebSearchRequestSchema.parse({ query: "test", limit: 11 })).toThrow();
-    expect(WebReadRequestSchema.parse({ url: "https://example.com" }).url).toBe("https://example.com");
-    expect(() => WebReadRequestSchema.parse({ url: "file:///etc/passwd" })).toThrow();
+    expect(
+      WebSearchRequestSchema.parse({ query: "test", limit: 10 }).limit,
+    ).toBe(10);
+    expect(() =>
+      WebSearchRequestSchema.parse({ query: "test", limit: 11 }),
+    ).toThrow();
+    expect(WebReadRequestSchema.parse({ url: "https://example.com" }).url).toBe(
+      "https://example.com",
+    );
+    expect(() =>
+      WebReadRequestSchema.parse({ url: "file:///etc/passwd" }),
+    ).toThrow();
   });
 
   test("applies llm defaults", () => {
-    expect(LlmConfigSchema.parse({}).endpoint).toBe("https://api.openai.com/v1");
+    expect(LlmConfigSchema.parse({}).endpoint).toBe(
+      "https://api.openai.com/v1",
+    );
+  });
+
+  test("validates complete request-scoped LLM config", () => {
+    expect(
+      RequestLlmConfigSchema.parse({
+        endpoint: "https://models.example.com/v1",
+        model: "caller-model",
+        apiKey: "caller-secret",
+      }),
+    ).toEqual({
+      endpoint: "https://models.example.com/v1",
+      model: "caller-model",
+      apiKey: "caller-secret",
+      headers: {},
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+    });
+    expect(() =>
+      RequestLlmConfigSchema.parse({
+        endpoint: "https://models.example.com/v1",
+        model: "caller-model",
+      }),
+    ).toThrow();
+    expect(() =>
+      RequestLlmConfigSchema.parse({
+        endpoint: "file:///tmp/socket",
+        model: "caller-model",
+        apiKey: "caller-secret",
+      }),
+    ).toThrow();
   });
 
   test("parses default LLM provider settings", () => {
@@ -56,19 +104,21 @@ describe("core schemas", () => {
       id: "provider-1",
       name: "OpenAI",
       endpoint: "https://api.openai.com/v1",
-      model: "gpt-4.1-mini"
+      model: "gpt-4.1-mini",
     });
 
     expect(provider.headers).toEqual({});
     expect(provider.temperature).toBe(0.2);
     expect(provider.maxOutputTokens).toBe(4096);
-    expect(OpenAiCompatibleProviderSchema.parse({
-      id: "provider-2",
-      name: "Large context model",
-      endpoint: "https://api.example.com/v1",
-      model: "large-output-model",
-      maxOutputTokens: 128000
-    }).maxOutputTokens).toBe(128000);
+    expect(
+      OpenAiCompatibleProviderSchema.parse({
+        id: "provider-2",
+        name: "Large context model",
+        endpoint: "https://api.example.com/v1",
+        model: "large-output-model",
+        maxOutputTokens: 128000,
+      }).maxOutputTokens,
+    ).toBe(128000);
   });
 
   test("rejects invalid provider endpoint", () => {
@@ -77,13 +127,15 @@ describe("core schemas", () => {
         id: "provider-1",
         name: "OpenAI",
         endpoint: "not-a-url",
-        model: "gpt-4.1-mini"
-      })
+        model: "gpt-4.1-mini",
+      }),
     ).toThrow();
   });
 
   test("rejects empty and duplicate header names", () => {
     expect(() => HeaderMapSchema.parse({ " ": "value" })).toThrow();
-    expect(() => HeaderMapSchema.parse({ Authorization: "a", authorization: "b" })).toThrow();
+    expect(() =>
+      HeaderMapSchema.parse({ Authorization: "a", authorization: "b" }),
+    ).toThrow();
   });
 });
