@@ -6,6 +6,9 @@ metadata:
     app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  # Avoid surge pods: managed vClusters enforce a user-wide pod quota.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}

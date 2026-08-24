@@ -35,8 +35,7 @@ spec:
             {{- toYaml .Values.searxng.resources | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /etc/searxng/settings.yml
-              subPath: settings.yml
+              mountPath: /etc/searxng
               readOnly: true
       volumes:
         - name: config
