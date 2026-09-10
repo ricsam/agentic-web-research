@@ -116,3 +116,13 @@ The immutable claim-template name is **`data`**, not `postgres-data`. Preserve:
 Before any separately authorized live Helm operation, refresh the physical
 inventory, ownership state, PVC binding, external config reference and fence
 state. These source checks do not authorize or establish safe live adoption.
+
+## Parent source publication
+
+The infrastructure parent subsequently released only the PROJECT research Service
+maintenance selector (operation e7a49230, 10 September), with readiness from chat
+and the same ready EndpointSlice. No controller, image, DB or provider task changed.
+This source checkpoint is published with CI skipped deliberately: chart-only
+convergence must not rebuild/overwrite the unrelated mutable `latest` image.
+The existing accepted app digest remains authoritative. Helm adoption is still a
+separate optional operator action; no adoption is needed for image-only updates.
