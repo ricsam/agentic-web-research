@@ -1,4 +1,4 @@
-{{- if .Values.searxng.enabled -}}
+{{- if and .Values.searxng.enabled (not .Values.searxng.existingConfigMap) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -1,9 +1,14 @@
 image:
   repository: ghcr.io/ricsam/agentic-web-research
   tag: latest
+  # When set, takes precedence over tag.
+  digest: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
+# Placement shared by the app, Postgres, and SearXNG; no runtimeClassName is set.
+nodeSelector: {}
+tolerations: []
 replicaCount: 1
 existingSecret: agentic-web-research-secrets
 
@@ -20,6 +25,8 @@ secretKeys:
 service:
   type: ClusterIP
   port: 8080
+  # Preserve an installed migration fence until the operator explicitly releases it.
+  maintenanceFence: false
 
 ingress:
   enabled: false
@@ -70,6 +77,10 @@ postgres:
   storageSize: 10Gi
   storageClassName: rook-ceph-block
   externalDatabaseUrl: ""
+  # Opt in only for an existing, verified PostgreSQL 16 data directory.
+  # Refuses startup rather than allowing initdb on an empty/wrong-major volume.
+  existingDataGuard:
+    enabled: false
   podSecurityContext:
     fsGroup: 70
     seccompProfile:
@@ -92,7 +103,11 @@ postgres:
 searxng:
   enabled: true
   image: searxng/searxng:latest
+  # Empty preserves Kubernetes image-based defaulting (latest => Always).
+  imagePullPolicy: ""
   externalUrl: ""
+  # Reference an installed ConfigMap without rendering/managing its payload.
+  existingConfigMap: ""
   podSecurityContext:
     fsGroup: 977
     seccompProfile:

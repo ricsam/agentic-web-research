@@ -6,6 +6,9 @@ spec:
   type: {{ .Values.service.type }}
   selector:
     app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}
+    {{- if .Values.service.maintenanceFence }}
+    migration.r5d.dev/maintenance: "true"
+    {{- end }}
   ports:
     - name: http
       port: {{ .Values.service.port }}

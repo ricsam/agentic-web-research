@@ -14,11 +14,15 @@ spec:
         app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}-searxng
     spec:
       automountServiceAccountToken: false
+      {{- include "agentic-web-research.placement" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.searxng.podSecurityContext | nindent 8 }}
       containers:
         - name: searxng
           image: {{ .Values.searxng.image | quote }}
+          {{- with .Values.searxng.imagePullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.searxng.securityContext | nindent 12 }}
           ports:
@@ -40,7 +44,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "agentic-web-research.fullname" . }}-searxng
+            name: {{ default (printf "%s-searxng" (include "agentic-web-research.fullname" .)) .Values.searxng.existingConfigMap | quote }}
 ---
 apiVersion: v1
 kind: Service

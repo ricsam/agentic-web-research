@@ -27,8 +27,35 @@ spec:
         app.kubernetes.io/name: {{ include "agentic-web-research.name" . }}-postgres
     spec:
       automountServiceAccountToken: false
+      {{- include "agentic-web-research.placement" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.postgres.podSecurityContext | nindent 8 }}
+      {{- if .Values.postgres.existingDataGuard.enabled }}
+      initContainers:
+        - name: migration-existing-pgdata-guard
+          image: {{ .Values.postgres.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - 'test -s "$PGDATA/global/pg_control"; test "$(cat "$PGDATA/PG_VERSION")" = "16"; test -d "$PGDATA/base"; echo ORIGINAL_PGDATA_GUARD_PASSED > /dev/termination-log; echo ORIGINAL_PGDATA_GUARD_PASSED'
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          securityContext:
+            {{- toYaml .Values.postgres.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              readOnly: true
+      {{- end }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image | quote }}

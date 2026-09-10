@@ -1,0 +1,74 @@
+# PROJECT research in the physical r5d-chat namespace, NOT platform AWR.
+# Source-only convergence snapshot: 2026-09-10. See ../r5d-chat-convergence.md.
+# This is for an existing installation and retained PGDATA, not a fresh install.
+image:
+  repository: ghcr.io/ricsam/agentic-web-research
+  digest: sha256:8cdaa243c3db629f2d580f909e45a725d8e03c457ea4876665f9aee9a0984c35
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull
+existingSecret: r5d-chat-secrets
+
+nodeSelector:
+  kubernetes.io/hostname: hetzner-kata-2
+tolerations:
+  - key: r5d.xyz/nodepool
+    operator: Equal
+    value: kata
+    effect: NoSchedule
+# Deliberately no runtimeClassName: these are ordinary pods on this node.
+
+service:
+  # Ordinary desired selector, per parent approval. The 14:21 snapshot was fenced;
+  # only the separate live operator may release that installed Service fence.
+  maintenanceFence: false
+
+env:
+  publicBaseUrl: http://agentic-web-research:8080
+  adminEmail: admin@r5d.chat
+
+requestLlmConfig:
+  mode: required
+capacity:
+  maxActiveResearchTasks: 8
+  maxActivePageRenders: 16
+demo:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 512Mi
+
+postgres:
+  image: docker.io/library/postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+  storageSize: 2Gi
+  storageClassName: rook-ceph-block
+  # Keep immutable template name data and its Filesystem/RWO defaults.
+  # Retained claim: data-agentic-web-research-postgres-0. Never recreate it.
+  existingDataGuard:
+    enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+searxng:
+  image: docker.io/searxng/searxng@sha256:11a9b34cdc0b1ec2b991470a2762ecb5a1a531898289fb51dcd015260450729e
+  # Preserve installed policy (digest alone would default to IfNotPresent).
+  imagePullPolicy: Always
+  # Payload not inspected: keep installed config external and untouched.
+  existingConfigMap: agentic-web-research-searxng
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# No ingress or NetworkPolicy is added by this overlay.
+ingress:
+  enabled: false
+networkPolicy:
+  enabled: false
