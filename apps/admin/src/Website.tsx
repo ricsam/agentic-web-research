@@ -571,38 +571,47 @@ function HelmSection({ baseUrl }: { baseUrl: string }) {
       <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start">
         <div>
           <Badge variant="outline" className="mb-3">Helm chart</Badge>
-          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Install from the chart repo hosted by this site.</h2>
+          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Install from the public GitHub Pages chart repo.</h2>
           <p className="mt-3 text-muted-foreground">
-            The chart deploys the app plus optional Postgres and SearXNG. Override values to use external managed services when you need production-grade operations.
+            Chart 0.2.2 deploys the app plus optional Postgres and SearXNG. The public image <code className="break-all font-mono text-xs">ghcr.io/ricsam/agentic-web-research:f7d1fd2a184ba2610b1673d808f232dfdc368adf</code> needs no image pull secret.
           </p>
           <div className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
-            <a className="rounded-lg border p-3 hover:bg-muted/30" href="/charts/index.yaml" target="_blank" rel="noreferrer">
+            <a className="rounded-lg border p-3 hover:bg-muted/30" href="https://ricsam.github.io/agentic-web-research/index.yaml" target="_blank" rel="noreferrer">
               <div className="flex items-center gap-2 font-medium"><ExternalLink className="h-4 w-4" /> Chart index</div>
-              <div className="mt-1 text-muted-foreground">/charts/index.yaml</div>
+              <div className="mt-1 break-all text-muted-foreground">ricsam.github.io/agentic-web-research/index.yaml</div>
             </a>
-            <a className="rounded-lg border p-3 hover:bg-muted/30" href="/charts/agentic-web-research-0.1.0.tgz">
+            <a className="rounded-lg border p-3 hover:bg-muted/30" href="https://ricsam.github.io/agentic-web-research/agentic-web-research-0.2.2.tgz">
               <div className="flex items-center gap-2 font-medium"><Boxes className="h-4 w-4" /> Package</div>
-              <div className="mt-1 text-muted-foreground">agentic-web-research-0.1.0.tgz</div>
+              <div className="mt-1 text-muted-foreground">agentic-web-research-0.2.2.tgz</div>
             </a>
           </div>
         </div>
         <div className="space-y-4">
           <CodeBlock
             title="Add the repo"
-            code={`helm repo add agentic-web-research ${baseUrl}/charts
+            code={`helm repo add agentic-web-research https://ricsam.github.io/agentic-web-research
 helm repo update
 helm search repo agentic-web-research`}
           />
           <CodeBlock
+            title="Create credentials"
+            code={`kubectl create namespace agentic-web-research \\
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic agentic-web-research-secrets \\
+  --namespace agentic-web-research \\
+  --from-literal=APP_SECRET='<long-random-value>' \\
+  --from-literal=ADMIN_PASSWORD='<admin-password>' \\
+  --from-literal=POSTGRES_PASSWORD='<database-password>' \\
+  --from-literal=SEARXNG_SECRET='<long-random-value>'`}
+          />
+          <CodeBlock
             title="Install"
-            code={`helm install awr agentic-web-research/agentic-web-research \\
-  --namespace agentic-web-research --create-namespace \\
-  --set image.repository=ghcr.io/your-org/agentic-web-research \\
-  --set image.tag=latest \\
+            code={`helm upgrade --install awr agentic-web-research/agentic-web-research \\
+  --version 0.2.2 \\
+  --namespace agentic-web-research \\
+  --set existingSecret=agentic-web-research-secrets \\
   --set env.publicBaseUrl=${baseUrl} \\
-  --set env.adminEmail=admin@example.com \\
-  --set env.adminPassword='change-me-now' \\
-  --set env.appSecret='replace-with-a-long-random-secret'`}
+  --set env.adminEmail=admin@example.com`}
           />
         </div>
       </div>

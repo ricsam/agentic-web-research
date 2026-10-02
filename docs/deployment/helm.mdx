@@ -3,43 +3,70 @@ title: "Helm"
 description: "Deploy agentic-web-research to Kubernetes"
 ---
 
-The Helm chart can deploy the application with PostgreSQL and SearXNG, or connect to external instances.
+The Helm chart can deploy the application with PostgreSQL and SearXNG, or connect to external instances. Chart `0.2.2` and its stock container image are public.
 
-## Install from the chart directory
+## Install from the public chart repository
+
+Add the GitHub Pages chart repository and create the namespace:
 
 ```bash
-helm upgrade --install awr ./deploy/helm/agentic-web-research \
+helm repo add agentic-web-research https://ricsam.github.io/agentic-web-research
+helm repo update
+
+kubectl create namespace agentic-web-research \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Create the Secret referenced by the chart's `existingSecret` value:
+
+```bash
+kubectl create secret generic agentic-web-research-secrets \
   --namespace agentic-web-research \
-  --create-namespace \
-  --set image.repository=ghcr.io/your-org/agentic-web-research \
-  --set image.tag=latest \
+  --from-literal=APP_SECRET='<long-random-value>' \
+  --from-literal=ADMIN_PASSWORD='<admin-password>' \
+  --from-literal=POSTGRES_PASSWORD='<database-password>' \
+  --from-literal=SEARXNG_SECRET='<long-random-value>'
+```
+
+Install the chart:
+
+```bash
+helm upgrade --install awr agentic-web-research/agentic-web-research \
+  --version 0.2.2 \
+  --namespace agentic-web-research \
+  --set existingSecret=agentic-web-research-secrets \
   --set env.publicBaseUrl=https://research.example.com \
-  --set env.adminEmail=admin@example.com \
-  --set env.adminPassword='replace-with-a-strong-password' \
-  --set env.appSecret='replace-with-a-long-random-secret'
+  --set env.adminEmail=admin@example.com
+```
+
+The default image is `ghcr.io/ricsam/agentic-web-research:f7d1fd2a184ba2610b1673d808f232dfdc368adf`. It is public, so the stock installation does not need registry authentication or `imagePullSecrets`.
+
+The public OCI mirror provides the same chart:
+
+```bash
+helm upgrade --install awr \
+  oci://ghcr.io/ricsam/charts/agentic-web-research \
+  --version 0.2.2 \
+  --namespace agentic-web-research \
+  --set existingSecret=agentic-web-research-secrets
 ```
 
 <Warning>
-  Command-line secret values can be stored in shell history and the Helm release. For production, use your organization's secret-management workflow and restrict access to Helm release data.
+  Do not pass credentials with `--set`. Store them in the Secret referenced by `existingSecret`. For production, use your organization's secret-management workflow.
 </Warning>
+
+For unattended setup, you can also add `BOOTSTRAP_API_KEY`, `BOOTSTRAP_LLM_API_KEY`, and `BOOTSTRAP_LLM_HEADERS_JSON` to the same Secret. Configure the related non-secret provider values under `bootstrapLlm`.
 
 ## Configure ingress
 
 Create a values file:
 
 ```yaml
-image:
-  repository: ghcr.io/your-org/agentic-web-research
-  tag: latest
-
-imagePullSecrets:
-  - name: ghcr-credentials
+existingSecret: agentic-web-research-secrets
 
 env:
   publicBaseUrl: https://research.example.com
   adminEmail: admin@example.com
-  adminPassword: replace-with-a-strong-password
-  appSecret: replace-with-a-long-random-secret
 
 ingress:
   enabled: true
@@ -54,11 +81,13 @@ ingress:
 Install it:
 
 ```bash
-helm upgrade --install awr ./deploy/helm/agentic-web-research \
+helm upgrade --install awr agentic-web-research/agentic-web-research \
+  --version 0.2.2 \
   --namespace agentic-web-research \
-  --create-namespace \
   --values values.production.yaml
 ```
+
+Private image overrides remain supported. Set `image.repository` and `image.tag` or `image.digest`, and add `imagePullSecrets` only when your registry requires authentication.
 
 ## Persistence
 
@@ -75,11 +104,16 @@ Set `postgres.storageClassName` to a `ReadWriteOnce` storage class available in 
 
 ## External PostgreSQL
 
+Add `DATABASE_URL` to the Secret named by `existingSecret`, then enable the external database path:
+
 ```yaml
 postgres:
   enabled: false
-  externalDatabaseUrl: postgres://user:password@postgres.example.com:5432/agentic_web_research
+  # A non-empty value makes the chart read DATABASE_URL from existingSecret.
+  externalDatabaseUrl: from-existing-secret
 ```
+
+You can change the Secret key name with `secretKeys.databaseUrl`. Do not put the connection string in your values file.
 
 ## External SearXNG
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agentic-web-research Helm charts</title>
+  <style>
+    body { max-width: 52rem; margin: 4rem auto; padding: 0 1.5rem; font: 1rem/1.6 system-ui, sans-serif; color: #172d2b; }
+    pre { padding: 1rem; overflow-x: auto; background: #edf6f4; border-radius: .5rem; }
+    a { color: #0f766e; }
+  </style>
+</head>
+<body>
+  <h1>agentic-web-research Helm charts</h1>
+  <p>Public Helm repository for the self-hosted web research API. No registry login is required to download charts or the default container image.</p>
+  <pre><code>helm repo add agentic-web-research https://ricsam.github.io/agentic-web-research
+helm repo update
+helm search repo agentic-web-research --versions</code></pre>
+  <p>Create the application's credential Secret before installing. Follow the <a href="https://github.com/ricsam/agentic-web-research/blob/main/docs/deployment/helm.mdx">Helm deployment guide</a> for configuration and installation.</p>
+  <p><a href="index.yaml">Chart index</a> · <a href="https://github.com/ricsam/agentic-web-research">Source repository</a></p>
+</body>
+</html>

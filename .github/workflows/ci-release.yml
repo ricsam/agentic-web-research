@@ -46,6 +46,12 @@ jobs:
           tags: |
             ghcr.io/ricsam/agentic-web-research:${{ github.sha }}
             ghcr.io/ricsam/agentic-web-research:latest
+      - name: Verify anonymous image access
+        run: |
+          config_dir="$(mktemp -d)"
+          trap 'rm -rf "$config_dir"' EXIT
+          DOCKER_CONFIG="$config_dir" docker manifest inspect \
+            "ghcr.io/ricsam/agentic-web-research:${GITHUB_SHA}" >/dev/null
 
   chart:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -65,3 +71,10 @@ jobs:
           mkdir -p .helm-package
           helm package deploy/helm/agentic-web-research --destination .helm-package
           helm push ".helm-package/agentic-web-research-${GITHUB_REF_NAME#v}.tgz" oci://ghcr.io/ricsam/charts
+      - name: Verify anonymous chart access
+        run: |
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          HELM_REGISTRY_CONFIG="$verify_dir/registry.json" helm pull \
+            oci://ghcr.io/ricsam/charts/agentic-web-research \
+            --version "${GITHUB_REF_NAME#v}" --destination "$verify_dir"

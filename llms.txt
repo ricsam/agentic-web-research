@@ -15,8 +15,10 @@ This file is served from <website>/llms.txt and is intended to help LLMs and age
 - Authenticated research API: <website>/v1/research
 - Public demo configuration: <website>/v1/demo/config
 - Public demo research API: <website>/v1/demo/research
-- Helm chart repository: <website>/charts
-- Helm chart index: <website>/charts/index.yaml
+- Public Helm chart repository: https://ricsam.github.io/agentic-web-research
+- Public Helm chart index: https://ricsam.github.io/agentic-web-research/index.yaml
+- Public Helm OCI mirror: oci://ghcr.io/ricsam/charts/agentic-web-research
+- Public container image: ghcr.io/ricsam/agentic-web-research:f7d1fd2a184ba2610b1673d808f232dfdc368adf
 - Admin console: <website>/admin
 - Source repository: https://github.com/ricsam/agentic-web-research
 
@@ -183,7 +185,8 @@ data: {"type":"final","taskId":"...","at":"...","payload":{"answer":"...","sourc
 - Deployments may instead bootstrap one API key and the active LLM provider from environment variables.
 - The LLM provider must be OpenAI API compatible.
 - The service supports Docker Compose and Helm deployments.
-- Helm repository URL: `<website>/charts`.
+- Helm chart `0.2.2` is public at `https://ricsam.github.io/agentic-web-research`; add it with `helm repo add agentic-web-research https://ricsam.github.io/agentic-web-research`.
+- The stock public image needs no registry authentication or `imagePullSecrets`; private-image overrides remain supported.
 - Private network rendering is disabled for authenticated search/read/research APIs.
 
 ## Recommended agent behavior

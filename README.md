@@ -84,14 +84,27 @@ Demo controls are configured with:
 - `DEMO_RESEARCH_PAGE_TIMEOUT_MS`
 - `DEMO_RESEARCH_TIMEOUT_MS`
 
-## Helm chart repository
+## Public distributions
 
-The chart source lives in `deploy/helm/agentic-web-research`. Packaged chart repo assets are served from `/charts` when `deploy/helm/repo` exists:
+The stock container image is public and does not require registry credentials or
+`imagePullSecrets`:
 
 ```bash
-helm repo add agentic-web-research http://localhost:8080/charts
+docker pull ghcr.io/ricsam/agentic-web-research:f7d1fd2a184ba2610b1673d808f232dfdc368adf
+```
+
+The chart source lives in `deploy/helm/agentic-web-research`. Chart `0.2.2` is
+published through the public [GitHub Pages repository](https://ricsam.github.io/agentic-web-research)
+and mirrored at `oci://ghcr.io/ricsam/charts/agentic-web-research`:
+
+```bash
+helm repo add agentic-web-research https://ricsam.github.io/agentic-web-research
 helm repo update
+
+kubectl create namespace agentic-web-research \
+  --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic agentic-web-research-secrets \
+  --namespace agentic-web-research \
   --from-literal=APP_SECRET='<long-random-value>' \
   --from-literal=ADMIN_PASSWORD='<admin-password>' \
   --from-literal=POSTGRES_PASSWORD='<database-password>' \
@@ -99,11 +112,16 @@ kubectl create secret generic agentic-web-research-secrets \
   --from-literal=BOOTSTRAP_LLM_API_KEY='<model-api-key>' \
   --from-literal=BOOTSTRAP_LLM_HEADERS_JSON='{}' \
   --from-literal=SEARXNG_SECRET='<long-random-value>'
-helm install awr agentic-web-research/agentic-web-research
+
+helm upgrade --install awr agentic-web-research/agentic-web-research \
+  --version 0.2.2 \
+  --namespace agentic-web-research \
+  --set existingSecret=agentic-web-research-secrets
 ```
 
 The chart never generates or stores credential values. Set `existingSecret` if
-you use a different Secret name.
+you use a different Secret name. You can use the OCI mirror by replacing the
+chart reference with `oci://ghcr.io/ricsam/charts/agentic-web-research`.
 
 Regenerate the package after chart changes:
 
