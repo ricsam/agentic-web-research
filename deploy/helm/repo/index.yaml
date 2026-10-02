@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   agentic-web-research:
   - apiVersion: v2
+    appVersion: 0.2.2
+    created: "2026-10-02T10:27:01.504399407+02:00"
+    description: Self-hosted web research service for AI agents
+    digest: 00017e4510ca9c7db6637d66a7fff36b87a929ffa73dc373ff4a25c99b285b4b
+    name: agentic-web-research
+    type: application
+    urls:
+    - agentic-web-research-0.2.2.tgz
+    version: 0.2.2
+  - apiVersion: v2
     appVersion: 0.2.1
     created: "2026-07-24T15:22:51.702405+02:00"
     description: Self-hosted web research service for AI agents
@@ -31,4 +41,4 @@ entries:
     urls:
     - agentic-web-research-0.1.0.tgz
     version: 0.1.0
-generated: "2026-07-24T15:22:51.701533+02:00"
+generated: "2026-10-02T10:27:01.503648785+02:00"

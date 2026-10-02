@@ -217,7 +217,7 @@ class ChartTests(unittest.TestCase):
         self.assertNotIn("nodeSelector", pod)
         self.assertNotIn("tolerations", pod)
         self.assertIn(("ConfigMap", NAME + "-searxng"), self.default)
-        self.assertEqual(self.default[("Deployment", NAME)]["spec"]["template"]["spec"]["containers"][0]["image"], "ghcr.io/ricsam/agentic-web-research:latest")
+        self.assertEqual(self.default[("Deployment", NAME)]["spec"]["template"]["spec"]["containers"][0]["image"], "ghcr.io/ricsam/agentic-web-research:f7d1fd2a184ba2610b1673d808f232dfdc368adf")
 
     def test_normalization_retains_meaningful_spec_drift(self):
         for key, path, value in [

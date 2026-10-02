@@ -1,6 +1,7 @@
 image:
   repository: ghcr.io/ricsam/agentic-web-research
-  tag: latest
+  # Verified application build with structured page-access errors (issue #1).
+  tag: f7d1fd2a184ba2610b1673d808f232dfdc368adf
   # When set, takes precedence over tag.
   digest: ""
   pullPolicy: IfNotPresent
