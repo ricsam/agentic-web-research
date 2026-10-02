@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
+import Fastify from "fastify";
+import { ResearchDefaultsSchema } from "@agentic-web-research/core";
+import { hashApiKey } from "../auth/keys";
+import type { Database } from "../db/database";
+import { registerErrorHandler } from "../errorHandler";
+import { createResearchRuntime } from "../research/runtime";
+import type { WebRenderer } from "../research/renderer";
 import {
   cancelResearchLease,
   demoDefaults,
@@ -7,6 +14,7 @@ import {
   createRequestAbortController,
   llmsTxt,
   registerResearchLease,
+  registerPublicRoutes,
   waitForResearchAbort,
 } from "./public";
 import type { AppConfig } from "../config";
@@ -47,6 +55,140 @@ const config: AppConfig = {
   DEMO_RESEARCH_PAGE_TIMEOUT_MS: 15000,
   DEMO_RESEARCH_TIMEOUT_MS: 120000,
 };
+
+const testApiKey = "awr_read-route-test-only";
+
+async function readRouteHarness() {
+  const app = Fastify();
+  registerErrorHandler(app);
+  const db = {
+    query: async (sql: string, params: unknown[]) => ({
+      rows: sql.includes("SELECT") && params[0] === hashApiKey(testApiKey)
+        ? [{ id: "read-test-key", name: "Test", prefix: "awr_read" }]
+        : []
+    }),
+    getResearchDefaults: async () => ResearchDefaultsSchema.parse({})
+  } as unknown as Database;
+  const runtime = createResearchRuntime(config);
+  await registerPublicRoutes(app, db, config, runtime);
+  app.addHook("onClose", async () => { await runtime.renderer.close(); });
+  return { app, runtime };
+}
+
+// Run the real renderer fallback against a local fixture without weakening the
+// production route's private-network restriction or making external requests.
+function useLocalFetchFixture(renderer: WebRenderer) {
+  const render = renderer.render.bind(renderer);
+  renderer.render = (url, options) => {
+    expect(options.allowPrivateNetworks).toBe(false);
+    return render(url, { ...options, allowPrivateNetworks: true });
+  };
+  (renderer as unknown as { renderWithBrowser: () => Promise<never> }).renderWithBrowser = async () => {
+    throw new Error("Page did not contain meaningful readable article content after rendering");
+  };
+}
+
+function readRequest(url: string) {
+  return {
+    method: "POST" as const,
+    url: "/v1/read",
+    headers: { authorization: `Bearer ${testApiKey}` },
+    payload: { url }
+  };
+}
+
+const upstreamErrors = [
+  [401, "Page requires authentication (HTTP 401)."],
+  [403, "Page access denied (HTTP 403); the site may require authentication or block automated access."],
+  [404, "Page unavailable (HTTP 404); it may be private or missing."],
+  [429, "Page unavailable (HTTP 429); the target site returned an unsuccessful response."],
+  [500, "Page unavailable (HTTP 500); the target site returned an unsuccessful response."],
+  [503, "Page unavailable (HTTP 503); the target site returned an unsuccessful response."]
+] as const;
+
+describe("POST /v1/read", () => {
+  test.each(upstreamErrors)("reports target HTTP %i as a structured 422, not a service failure", async (status, message) => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response("Upstream body must not be exposed", { status })
+    });
+    const { app, runtime } = await readRouteHarness();
+    useLocalFetchFixture(runtime.renderer);
+    try {
+      const response = await app.inject(readRequest(server.url.toString()));
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toEqual({
+        error: message,
+        code: "PAGE_ACCESS_ERROR",
+        upstreamStatus: status
+      });
+      expect(runtime.pageRenders.activeCount).toBe(0);
+    } finally {
+      await app.close();
+      await server.stop(true);
+    }
+  });
+
+  test("returns readable content unchanged after successful fallback", async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response(
+        '<main><h1>Readable document</h1><p>This page contains meaningful readable article content.</p><a href="/next">Next page</a></main>',
+        { headers: { "content-type": "text/html" } }
+      )
+    });
+    const { app, runtime } = await readRouteHarness();
+    useLocalFetchFixture(runtime.renderer);
+    try {
+      const response = await app.inject(readRequest(server.url.toString()));
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        url: server.url.toString(),
+        finalUrl: server.url.toString(),
+        title: "Readable document",
+        markdown: expect.stringContaining("This page contains meaningful readable article content."),
+        links: [{ title: "Next page", url: new URL("/next", server.url).toString() }],
+        truncated: false
+      });
+      expect(runtime.pageRenders.activeCount).toBe(0);
+    } finally {
+      await app.close();
+      await server.stop(true);
+    }
+  });
+
+  test("keeps unexpected errors generic and releases render capacity", async () => {
+    const { app, runtime } = await readRouteHarness();
+    runtime.renderer.render = async () => { throw new Error("unexpected internal detail"); };
+    try {
+      const response = await app.inject(readRequest("https://example.com/"));
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toEqual({ error: "Internal server error" });
+      expect(runtime.pageRenders.activeCount).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("keeps API authentication, validation and URL-safety failures distinct", async () => {
+    const { app } = await readRouteHarness();
+    try {
+      const unauthenticated = await app.inject({ ...readRequest("https://example.com/"), headers: {} });
+      expect(unauthenticated.statusCode).toBe(401);
+      expect(unauthenticated.json()).toEqual({ error: "Invalid or missing API key" });
+      const invalid = await app.inject(readRequest("ftp://example.com/"));
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json().error).toBe("Validation failed");
+      const unsafe = await app.inject(readRequest("http://127.0.0.1/"));
+      expect(unsafe.statusCode).toBe(400);
+      expect(unsafe.json()).toEqual({ error: "Private network URLs are disabled" });
+    } finally {
+      await app.close();
+    }
+  });
+});
 
 describe("request-scoped LLM headers", () => {
   test("parses a complete ephemeral override", () => {

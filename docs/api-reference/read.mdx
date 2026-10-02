@@ -1,0 +1,40 @@
+---
+title: "Read a page"
+description: "Render one public page as readable Markdown"
+---
+
+`POST /v1/read` renders one public HTTP or HTTPS page and returns readable Markdown. Send a research API key as a Bearer token.
+
+```bash
+curl https://research.example.com/v1/read \
+  -H "Authorization: Bearer $AWR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/article"}'
+```
+
+A successful request returns `200 OK` with the requested URL, final URL after redirects, title, Markdown, discovered links, and a `truncated` flag.
+
+## Target-page errors
+
+If reading fails after fallback and the target returned an unsuccessful HTTP response, the API returns `422 Unprocessable Content`. A successful fallback still returns `200 OK`:
+
+```json
+{
+  "error": "Page unavailable (HTTP 404); it may be private or missing.",
+  "code": "PAGE_ACCESS_ERROR",
+  "upstreamStatus": 404
+}
+```
+
+The target HTTP status remains in `upstreamStatus`; it does not become the API response status.
+
+| `upstreamStatus` | `error` |
+| --- | --- |
+| `404` | `Page unavailable (HTTP 404); it may be private or missing.` |
+| `403` | `Page access denied (HTTP 403); the site may require authentication or block automated access.` |
+| `401` | `Page requires authentication (HTTP 401).` |
+| Other unsuccessful status | `Page unavailable (HTTP <status>); the target site returned an unsuccessful response.` |
+
+The reader accesses target sites anonymously. Your research API key authenticates you to this service, but it does not sign the reader into target sites. For private GitHub content, use an authenticated GitHub tool. A target `404` may mean that content is private or missing; the reader cannot distinguish between them.
+
+API authentication errors remain `401 Unauthorized`. Unexpected internal errors return a generic `500 Internal Server Error`.

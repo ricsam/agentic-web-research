@@ -71,6 +71,20 @@ Endpoint: `POST <website>/v1/read`
 
 The JSON response contains the requested and final URLs, page title, readable Markdown, discovered links, and a `truncated` flag. Only public HTTP and HTTPS URLs are allowed.
 
+The reader accesses target sites anonymously. A research API key authenticates the client to this service but does not sign the reader into a target site. For private GitHub content, use an authenticated GitHub tool. Do not infer whether a target `404` means private or missing.
+
+When reading fails after fallback and the target returned an unsuccessful HTTP response, `/v1/read` returns HTTP `422` with JSON fields `error`, `code` (`PAGE_ACCESS_ERROR`), and `upstreamStatus`. The target status remains in `upstreamStatus`; API authentication failures remain `401`, and unexpected internal errors remain generic `500` responses.
+
+```json
+{
+  "error": "Page unavailable (HTTP 404); it may be private or missing.",
+  "code": "PAGE_ACCESS_ERROR",
+  "upstreamStatus": 404
+}
+```
+
+Error messages are `Page access denied (HTTP 403); the site may require authentication or block automated access.` for target `403`, `Page requires authentication (HTTP 401).` for target `401`, and `Page unavailable (HTTP <status>); the target site returned an unsuccessful response.` for other unsuccessful target statuses.
+
 ## Authenticated research API
 
 Endpoint: `POST <website>/v1/research`

@@ -87,6 +87,99 @@
         }
       }
     },
+    "/v1/read": {
+      "post": {
+        "tags": [
+          "Research"
+        ],
+        "operationId": "readPage",
+        "summary": "Read a page",
+        "description": "Renders one public HTTP or HTTPS page and returns readable Markdown. The reader accesses the target anonymously; the research API key does not authenticate it to the target site.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebReadRequest"
+              },
+              "example": {
+                "url": "https://example.com/article"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Readable page content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebReadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "description": "Reading failed after fallback and the target site returned an unsuccessful HTTP response. A successful fallback still returns 200. The target status is preserved in `upstreamStatus`; it is not used as the API response status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebReadError"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Target returned HTTP 404",
+                    "value": {
+                      "error": "Page unavailable (HTTP 404); it may be private or missing.",
+                      "code": "PAGE_ACCESS_ERROR",
+                      "upstreamStatus": 404
+                    }
+                  },
+                  "forbidden": {
+                    "summary": "Target returned HTTP 403",
+                    "value": {
+                      "error": "Page access denied (HTTP 403); the site may require authentication or block automated access.",
+                      "code": "PAGE_ACCESS_ERROR",
+                      "upstreamStatus": 403
+                    }
+                  },
+                  "authenticationRequired": {
+                    "summary": "Target returned HTTP 401",
+                    "value": {
+                      "error": "Page requires authentication (HTTP 401).",
+                      "code": "PAGE_ACCESS_ERROR",
+                      "upstreamStatus": 401
+                    }
+                  },
+                  "otherStatus": {
+                    "summary": "Target returned another unsuccessful status",
+                    "value": {
+                      "error": "Page unavailable (HTTP 503); the target site returned an unsuccessful response.",
+                      "code": "PAGE_ACCESS_ERROR",
+                      "upstreamStatus": 503
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/v1/demo/config": {
       "get": {
         "tags": [
@@ -262,6 +355,103 @@
       }
     },
     "schemas": {
+      "WebReadRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public HTTP or HTTPS URL to render"
+          }
+        }
+      },
+      "WebPageLink": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "url"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "WebReadResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "finalUrl",
+          "title",
+          "markdown",
+          "links",
+          "truncated"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Requested URL"
+          },
+          "finalUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Final URL after redirects"
+          },
+          "title": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string",
+            "description": "Readable page content as Markdown"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebPageLink"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether the Markdown response was truncated"
+          }
+        }
+      },
+      "WebReadError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "code",
+          "upstreamStatus"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Actionable description of the target-page failure"
+          },
+          "code": {
+            "type": "string",
+            "const": "PAGE_ACCESS_ERROR"
+          },
+          "upstreamStatus": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599,
+            "description": "HTTP status returned by the target site"
+          }
+        }
+      },
       "ResearchRequest": {
         "type": "object",
         "additionalProperties": false,

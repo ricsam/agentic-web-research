@@ -261,6 +261,13 @@ export type WebReadResult = {
   truncated: boolean;
 };
 
+/** HTTP 422 response when a target page returns an unsuccessful HTTP status. */
+export type WebReadError = {
+  error: string;
+  code: "PAGE_ACCESS_ERROR";
+  upstreamStatus: number;
+};
+
 export type ResearchSource = {
   url: string;
   title?: string;

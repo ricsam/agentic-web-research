@@ -5,7 +5,6 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
 import Fastify from "fastify";
-import { ZodError } from "zod";
 import { loadConfig } from "./config";
 import { seedAdminUser } from "./auth/admin";
 import { Database } from "./db/database";
@@ -13,11 +12,8 @@ import { registerAdminRoutes } from "./routes/admin";
 import { registerPublicRoutes } from "./routes/public";
 import { bootstrapServiceConfiguration } from "./bootstrap";
 import { createResearchRuntime } from "./research/runtime";
-import { UnsafeUrlError } from "./research/urlSafety";
-import {
-  RequestLlmConfigError,
-  requestLlmHeaderNames,
-} from "./research/requestLlm";
+import { registerErrorHandler } from "./errorHandler";
+import { requestLlmHeaderNames } from "./research/requestLlm";
 
 const config = loadConfig();
 const app = Fastify({
@@ -52,31 +48,7 @@ async function initDatabaseWithRetry(maxAttempts = 30) {
   }
 }
 
-app.setErrorHandler((error, _request, reply) => {
-  if (error instanceof ZodError) {
-    return reply
-      .code(400)
-      .send({ error: "Validation failed", issues: error.issues });
-  }
-  if (error instanceof UnsafeUrlError) {
-    return reply.code(400).send({ error: error.message });
-  }
-  if (error instanceof RequestLlmConfigError) {
-    return reply.code(error.statusCode).send({ error: error.message });
-  }
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "FST_ERR_CTP_EMPTY_JSON_BODY"
-  ) {
-    return reply
-      .code(400)
-      .send({ error: "Request body must be omitted or contain valid JSON" });
-  }
-  app.log.error(error);
-  return reply.code(500).send({ error: "Internal server error" });
-});
+registerErrorHandler(app);
 
 await app.register(cors, {
   origin: true,

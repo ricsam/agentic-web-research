@@ -4,6 +4,7 @@ import {
   isReadableContent,
   type ContentMetrics
 } from "./markdown";
+import { PageAccessError } from "./pageAccessError";
 import { assertSafeHttpUrl, UnsafeUrlError } from "./urlSafety";
 
 export type RenderedPage = {
@@ -152,6 +153,16 @@ async function extractBrowserContent(page: Page): Promise<BrowserContentSnapshot
 function combineRenderErrors(primary: unknown, fallback: unknown) {
   if (fallback instanceof UnsafeUrlError) return fallback;
   if (primary instanceof UnsafeUrlError) return primary;
+  // Prefer the last HTTP response, but keep a browser HTTP failure when the
+  // fallback fails without a response. Never turn a URL-safety error into one.
+  const pageAccessError = fallback instanceof PageAccessError
+    ? fallback
+    : primary instanceof PageAccessError ? primary : null;
+  if (pageAccessError) {
+    return new PageAccessError(pageAccessError.upstreamStatus, {
+      cause: new AggregateError([primary, fallback], "Browser and fallback fetch failed")
+    });
+  }
   const primaryMessage = primary instanceof Error ? primary.message : String(primary);
   const fallbackMessage = fallback instanceof Error ? fallback.message : String(fallback);
   return new Error(`${primaryMessage}; fallback fetch also failed: ${fallbackMessage}`);
@@ -221,7 +232,7 @@ export class WebRenderer {
         signal: controller.signal
       });
 
-      if (!response.ok) throw new Error(`HTTP fetch failed with ${response.status}`);
+      if (!response.ok) throw new PageAccessError(response.status);
       if (!isHtmlContentType(response.headers.get("content-type"))) {
         throw new Error(`Unsupported content type: ${response.headers.get("content-type") ?? "unknown"}`);
       }
@@ -269,10 +280,11 @@ export class WebRenderer {
     const page = await context.newPage();
 
     try {
-      await page.goto(safeUrl.toString(), {
+      const response = await page.goto(safeUrl.toString(), {
         waitUntil: "commit",
         timeout: options.timeoutMs
       });
+      if (response && !response.ok()) throw new PageAccessError(response.status());
       await page.waitForLoadState("domcontentloaded", { timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
       await page.waitForLoadState("networkidle", { timeout: networkIdleGraceMs(options.timeoutMs) }).catch(() => undefined);
       await page.locator("body").waitFor({ state: "attached", timeout: bodyWaitMs(options.timeoutMs) }).catch(() => undefined);
