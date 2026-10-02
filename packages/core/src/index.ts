@@ -111,7 +111,8 @@ export const RequestLlmConfigSchema = z
     model: ProviderModelSchema,
     apiKey: ApiKeySchema.optional(),
     headers: HeaderMapSchema,
-    temperature: TemperatureSchema.default(0.2),
+    // Preserve caller omission: some models reject sampling parameters entirely.
+    temperature: TemperatureSchema.optional(),
     maxOutputTokens: MaxOutputTokensSchema.default(4096),
   })
   .superRefine((provider, context) => {

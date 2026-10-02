@@ -77,7 +77,6 @@ describe("core schemas", () => {
       model: "caller-model",
       apiKey: "caller-secret",
       headers: {},
-      temperature: 0.2,
       maxOutputTokens: 4096,
     });
     expect(() =>

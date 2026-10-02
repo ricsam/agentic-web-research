@@ -235,7 +235,9 @@ export async function runResearch(input: ResearchRunInput) {
 
     const result = streamText({
       model: provider(llmProvider.model),
-      temperature: llmProvider.temperature,
+      ...(llmProvider.temperature === undefined
+        ? {}
+        : { temperature: llmProvider.temperature }),
       maxOutputTokens: llmProvider.maxOutputTokens,
       abortSignal: signal,
       stopWhen: [

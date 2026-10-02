@@ -191,6 +191,22 @@ describe("POST /v1/read", () => {
 });
 
 describe("request-scoped LLM headers", () => {
+  test("does not invent temperature when the caller omits it", () => {
+    const headers = {
+      [requestLlmHeaderNames.endpoint]: "https://models.example.com/v1",
+      [requestLlmHeaderNames.model]: "caller-model",
+      [requestLlmHeaderNames.apiKey]: "model-secret",
+    };
+    expect(
+      parseRequestLlmConfig({ headers } as never, "required")?.temperature,
+    ).toBeUndefined();
+    expect(
+      parseRequestLlmConfig({
+        headers: { ...headers, [requestLlmHeaderNames.temperature]: "0" },
+      } as never, "required")?.temperature,
+    ).toBe(0);
+  });
+
   test("parses a complete ephemeral override", () => {
     const request = {
       headers: {
