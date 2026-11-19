@@ -126,3 +126,42 @@ This source checkpoint is published with CI skipped deliberately: chart-only
 convergence must not rebuild/overwrite the unrelated mutable `latest` image.
 The existing accepted app digest remains authoritative. Helm adoption is still a
 separate optional operator action; no adoption is needed for image-only updates.
+
+## Bun 1.4.4 runtime swap (19 November 2026)
+
+Bun releases before 1.4.4 bundle a brotli decoder with an out-of-bounds write
+(CVE-2026-111497, GHSA-663w-cv8g-jj2p) that `fetch()` reaches through any
+`Content-Encoding: br` reply. Main moved to Bun 1.4.4, but a main build cannot
+replace this installation's image without also changing its application:
+
+- The accepted image `sha256:8cdaa243…` (tag `sha-302810f`, created 24 August
+  20:22 UTC outside CI) was built from a working tree with uncommitted changes.
+  Its `COPY . .` layer equals commit `302810f` for `apps/server`, `apps/admin`
+  and `packages/core`, and adds `packages/cli` (a CLI and MCP server),
+  `examples/`, nine docs pages (integrations and examples), a different
+  `llms.txt` (served at `/llms.txt`), changes to existing docs pages,
+  workspace entries in `package.json` and `tsconfig.json`, and a `bun.lock`
+  that resolves newer dependencies, for example `ai` 5.0.245 instead of
+  5.0.196. None of this is on any branch; the image is its only copy.
+- `r5d-chat-runtime-swap.Dockerfile` therefore replaces only the runtime: it
+  repeats the repository Dockerfile's steps on `oven/bun:1.4.4` around the
+  accepted image's exact `/app` tree. The result keeps the same 22,403 `/app`
+  paths, modes, ownership, contents and symlink targets, the same Chromium
+  revision (1234), and the same entrypoint, command, user, working directory
+  and environment. It is published as
+  `ghcr.io/ricsam/agentic-web-research:r5d-chat-sha-302810f-bun-1.4.4`
+  (`sha256:168204d25c39023558199096e006a71f19fa96cadb15b084a95c503f6ebee64e`),
+  which `values-r5d-chat.yaml` pins.
+- Run side by side against the same PostgreSQL and stub SearXNG/model
+  endpoints, the accepted image (Bun 1.3.13) and the swap (Bun 1.4.4) returned
+  identical `/healthz`, `/readyz`, website, admin, `/llms.txt`, `/v1/search`
+  (brotli-encoded upstream reply), `/v1/read` (example.com and bun.com) and
+  private-URL rejection responses, and completed the same `/v1/research` run
+  with request-scoped model headers.
+
+To move this installation onto main builds, first decide what happens to the
+uncommitted work. Recover it from the `sha-302810f` image's `COPY . .` layer
+(index 13 of the `layers` in its linux/amd64 manifest) and compare it with `302810f`, for
+example with `skopeo copy` to an OCI directory and `diff -r` against
+`git archive 302810f`. A main build changes `/llms.txt`, drops the CLI and
+examples from the image, and installs main's dependency versions.
