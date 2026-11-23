@@ -123,7 +123,7 @@ class ChartTests(unittest.TestCase):
 
     def test_digest_pins_and_pull_policies(self):
         for kind, suffix, image, policy in [
-            ("Deployment", "", "ghcr.io/ricsam/agentic-web-research@sha256:168204d25c39023558199096e006a71f19fa96cadb15b084a95c503f6ebee64e", "IfNotPresent"),
+            ("Deployment", "", "ghcr.io/ricsam/agentic-web-research@sha256:1020260efbc86d648c157b8cd36471b29cca0da8c6c21bb16ec64cd8df50f819", "IfNotPresent"),
             ("Deployment", "-searxng", "docker.io/searxng/searxng@sha256:11a9b34cdc0b1ec2b991470a2762ecb5a1a531898289fb51dcd015260450729e", "Always"),
             ("StatefulSet", "-postgres", "docker.io/library/postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685", "IfNotPresent"),
         ]:

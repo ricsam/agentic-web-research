@@ -165,3 +165,15 @@ uncommitted work. Recover it from the `sha-302810f` image's `COPY . .` layer
 example with `skopeo copy` to an OCI directory and `diff -r` against
 `git archive 302810f`. A main build changes `/llms.txt`, drops the CLI and
 examples from the image, and installs main's dependency versions.
+
+### Bun 1.4.5 (23 November 2026)
+
+Bun 1.4.5 is a security release (BoringSSL, c-ares, llhttp, HTTP/3, SQLite).
+The same runtime swap, rebuilt on `oven/bun:1.4.5`, is published as
+`ghcr.io/ricsam/agentic-web-research:r5d-chat-sha-302810f-bun-1.4.5`
+(`sha256:1020260efbc86d648c157b8cd36471b29cca0da8c6c21bb16ec64cd8df50f819`)
+and pinned in `values-r5d-chat.yaml`. Its `/app` tree (22,403 entries),
+Chromium revision (1234) and runtime configuration equal the 1.4.4 swap's.
+Side by side with the 1.4.4 swap it returned identical responses for the checks
+above, and both reject expired and untrusted-root certificates with the same
+errors. The service uses no `bun:sqlite` and no custom CA.
