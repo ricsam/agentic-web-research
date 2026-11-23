@@ -3,10 +3,10 @@
 # This is for an existing installation and retained PGDATA, not a fresh install.
 image:
   repository: ghcr.io/ricsam/agentic-web-research
-  # Bun 1.4.4 under the unchanged /app tree of the previously accepted
+  # Bun 1.4.5 under the unchanged /app tree of the previously accepted
   # sha256:8cdaa243... (tag sha-302810f), built by ../r5d-chat-runtime-swap.Dockerfile.
   # That app tree is not on main; see ../r5d-chat-convergence.md before replacing it.
-  digest: sha256:168204d25c39023558199096e006a71f19fa96cadb15b084a95c503f6ebee64e
+  digest: sha256:1020260efbc86d648c157b8cd36471b29cca0da8c6c21bb16ec64cd8df50f819
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
